@@ -200,7 +200,6 @@ def main():
     fig.colorbar(collection);
     plt.savefig("Grey Area.png")
     plt.show()
-    # File("Grey_confirmation.pvd").write(rho)
 
 if __name__ == '__main__':
     main()
