@@ -181,7 +181,7 @@ def main():
     )
 
     TopOpt_problem.add_option('linear_solver', 'ma57')
-    TopOpt_problem.add_option('max_iter', 5) # max 300 so far tested
+    TopOpt_problem.add_option('max_iter', 200) # max 300 so far tested
     TopOpt_problem.add_option('accept_after_max_steps', 10) # was 10
     TopOpt_problem.add_option('hessian_approximation', 'limited-memory')
     TopOpt_problem.add_option('mu_strategy', 'adaptive')
