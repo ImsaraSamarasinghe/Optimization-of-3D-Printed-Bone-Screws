@@ -4,6 +4,7 @@ from firedrake.adjoint import *
 import cyipopt
 import numpy as np
 import matplotlib.pyplot as plt
+import random
 continue_annotation() # start tape
 
 # ------- setup class --------
@@ -54,7 +55,7 @@ class cantilever:
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
         
         # ------- Forward Problem -START -------------
-        lambda_ = E*self.nu/((1+self.nu)*(1-2*self.nu))
+        lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
         mu = E/(2*(1+self.nu))
 
         a = inner(self.sigma(self.u,lambda_,mu),self.epsilon(self.v))*dx
@@ -84,7 +85,7 @@ class cantilever:
 
         # ----------- forward problem - start ------------
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p
-        lambda_ = E*self.nu/((1+self.nu)*(1-2*self.nu))
+        lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
         mu = E/(2*(1+self.nu))
 
         a = inner(self.sigma(self.u,lambda_,mu),self.epsilon(self.v))*dx
@@ -165,9 +166,16 @@ def main():
     rho_init = Function(RHO)
     rho_filt = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
+    
+    # Function to initilize rho with random noise
+    def initiliser(rho):
+        l = rho.dat.data.size
+        for i in range(0,l-1):
+            rho.dat.data[i] = random.random()
+
+    initiliser(rho_init) # enter random noise to rho_init
 
     # ------ create optimiser -----
-    rho_init.assign(0.5) # 
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
     lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
@@ -198,7 +206,7 @@ def main():
         
         # ------ Solver Settings ----
         TopOpt_problem.add_option('linear_solver', 'ma57')
-        TopOpt_problem.add_option('max_iter', 100) # max 300 so far tested
+        TopOpt_problem.add_option('max_iter', 50) 
         TopOpt_problem.add_option('accept_after_max_steps', 10)
         TopOpt_problem.add_option('hessian_approximation', 'limited-memory')
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
@@ -208,22 +216,20 @@ def main():
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
         rho_init.vector()[:] = np.array(rho_opt) # Assign optimised rho to rho_init for next iteration
         x0 = rho_init.vector()[:].tolist() # Warm start the next iteration using the last iteration
-        ##phi_max = -0.055*i+0.405 # Update phi_max
         # phi_max according to paper
         if (i==7):
             phi_max = 0.075
         else:
             phi_max = 0.35
             
-        alpha = 0.18*i-0.13 # Update alpha - linearly according to paper
+        alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         
-
-    
-    # ------ write to .pvd file -------
-    rho.vector()[:] = np.array(rho_opt)
-    File("IDP_1.pvd").write(rho)
+        # write new file with each iteration
+        filename = f"iteration_{i}.pvd"
+        File(filename).write(rho_init)
     
     # ----  PLOT ----
+    rho.vector()[:] = np.array(rho_opt)
     fig, axes = plt.subplots()
     collection = tripcolor(rho, axes=axes, cmap='coolwarm')
     fig.colorbar(collection);
