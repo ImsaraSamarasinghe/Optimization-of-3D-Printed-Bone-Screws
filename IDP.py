@@ -9,7 +9,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -28,6 +28,7 @@ class cantilever:
         self.find_area = find_area
         self.alpha = alpha
         self.IDP = None
+        self.beta = beta
 
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -45,12 +46,19 @@ class cantilever:
         
     def get_IDP(self): # function to access IDP outside the class
         return self.IDP
+    
+    def tanh_filter(self,eta):
+        numerator = np.tanh(self.beta * eta) + np.tanh(self.beta * (self.rho_filt.dat.data - eta))
+        denominator = np.tanh(self.beta * eta) + np.tanh(self.beta * (1 - eta))
+        self.rho_filt.vector()[:] = numerator/denominator
+        
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
     def objective(self,x):
         self.rho.vector()[:] = x # Assign new densities to rho
         self.HH_filter() # filter densities
+        self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
         
@@ -61,7 +69,7 @@ class cantilever:
         a = inner(self.sigma(self.u,lambda_,mu),self.epsilon(self.v))*dx
         l = inner(self.t,self.v)*ds(2)
 
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC2,self.BC3])##NOTE:::BC1 REMOVED
+        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])##NOTE:::BC1 REMOVED
         forward_solver = LinearVariationalSolver(forward_problem)
         forward_solver.solve()
         # ------ Forward Problem -END ----------------
@@ -82,6 +90,7 @@ class cantilever:
     def gradient(self,x):
         self.rho.vector()[:] = x # assign new densities to rho
         self.HH_filter() # filter rho
+        self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
 
         # ----------- forward problem - start ------------
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p
@@ -91,7 +100,7 @@ class cantilever:
         a = inner(self.sigma(self.u,lambda_,mu),self.epsilon(self.v))*dx
         l = inner(self.t,self.v)*ds(2)
 
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC2,self.BC3])##NOTE:::BC1 REMOVED
+        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])##NOTE:::BC1 REMOVED
         forward_solver = LinearVariationalSolver(forward_problem)
         forward_solver.solve()
         # --------- forward problem - end -----------------
@@ -166,16 +175,9 @@ def main():
     rho_init = Function(RHO)
     rho_filt = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
-    
-    # Function to initilize rho with random noise
-    def initiliser(rho):
-        l = rho.dat.data.size
-        for i in range(0,l-1):
-            rho.dat.data[i] = random.random()
-
-    initiliser(rho_init) # enter random noise to rho_init
 
     # ------ create optimiser -----
+    rho_init.assign(0.5) # Assign starting initialisation for the rho field = 0.5
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
     lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
@@ -187,11 +189,12 @@ def main():
 
     cl = [Volume_Lower,phi_min] # lower bound of the constraints
     alpha = 0.0000001
+    beta = 2
     
     # ------- solve with sub-iterations -------
     for i in range(1,7):
         cu = [Volume_Upper,phi_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha) # create object class
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -205,8 +208,13 @@ def main():
         )
         
         # ------ Solver Settings ----
+        if (i == 1):
+            max_iter = 150
+        else:
+            max_iter = 100
+            
         TopOpt_problem.add_option('linear_solver', 'ma57')
-        TopOpt_problem.add_option('max_iter', 50) 
+        TopOpt_problem.add_option('max_iter', max_iter) 
         TopOpt_problem.add_option('accept_after_max_steps', 10)
         TopOpt_problem.add_option('hessian_approximation', 'limited-memory')
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
@@ -216,6 +224,7 @@ def main():
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
         rho_init.vector()[:] = np.array(rho_opt) # Assign optimised rho to rho_init for next iteration
         x0 = rho_init.vector()[:].tolist() # Warm start the next iteration using the last iteration
+        
         # phi_max according to paper
         if (i==7):
             phi_max = 0.075
@@ -223,17 +232,12 @@ def main():
             phi_max = 0.35
             
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
+        beta = 4*i # Update beta according to paper
         
         # write new file with each iteration
         filename = f"iteration_{i}.pvd"
         File(filename).write(rho_init)
     
-    # ----  PLOT ----
-    rho.vector()[:] = np.array(rho_opt)
-    fig, axes = plt.subplots()
-    collection = tripcolor(rho, axes=axes, cmap='coolwarm')
-    fig.colorbar(collection);
-    plt.show()
 
 if __name__ == '__main__':
     main()
