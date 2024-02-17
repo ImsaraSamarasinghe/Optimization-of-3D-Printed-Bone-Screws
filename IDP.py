@@ -9,7 +9,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,i): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -29,6 +29,10 @@ class cantilever:
         self.alpha = alpha
         self.IDP = None
         self.beta = beta
+        self.i = i
+        self.outfile1 = File(f"Design_Variable_1.pvd")
+        self.outfile2 = File(f"HelmHoltzFilter_1.pvd")
+        self.outfile3 = File(f"ProjectionFilter_1.pvd")
 
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -57,8 +61,13 @@ class cantilever:
     # Function for the creation of the objective function
     def objective(self,x):
         self.rho.vector()[:] = x # Assign new densities to rho
+        self.outfile1.write(self.rho)
+        
         self.HH_filter() # filter densities
+        self.outfile2.write(self.rho_filt)
+        
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
+        self.outfile3.write(self.rho_filt)
         
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
         
@@ -106,6 +115,7 @@ class cantilever:
         # --------- forward problem - end -----------------
         
         # --- find gradient ------
+        # Find the new objective
         s = self.sigma(self.uh,lambda_,mu)
         Force_upper = assemble(s[0,1]*ds(4))
         Force_lower = assemble(s[0,1]*ds(3))
@@ -114,6 +124,7 @@ class cantilever:
         avg_ss_upper = Force_upper/area_upper
         avg_ss_lower = Force_lower/area_lower
         J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
         
@@ -124,6 +135,8 @@ class cantilever:
         # Volume constraint
         self.rho.vector()[:] = x
         self.HH_filter()
+        self.tanh_filter(0.5)
+        
         Volume = assemble(self.rho_filt*dx)
         
         # Intermediate Density Penalisation
@@ -137,6 +150,8 @@ class cantilever:
         # gradient of the volume
         self.rho.vector()[:] = x
         self.HH_filter()
+        self.tanh_filter(0.5)
+        
         Volume = assemble(self.rho_filt*dx)
         c = Control(self.rho)
         jac1 = compute_gradient(Volume,c)
@@ -148,13 +163,15 @@ class cantilever:
         return np.concatenate((jac1.dat.data,jac2.dat.data))
 
 def main():
+    # Times
+    t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size
     nx, ny = 150, 30 # mesh size
     VolFrac = 0.5*L*W # Volume Fraction
-    E_max, nu = 1e5, 0.3 # material properties
+    E_max, nu = 1, 0.3 # material properties # E_max = 1e5
     p, E_min = 3.0, 1e-3 # SIMP Values
-    t = Constant([2000,0]) # load
+    t = Constant([1,0]) # load # t = 2000
 
     # ----- setup BC, mesh, and function spaces ----
     mesh = RectangleMesh(nx,ny,L,W)
@@ -165,7 +182,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 0.02
+    r_min = 0.08
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -184,7 +201,7 @@ def main():
     
     Volume_Lower = 0
     Volume_Upper = VolFrac
-    phi_max = 100
+    phi_max = 50
     phi_min = 0
 
     cl = [Volume_Lower,phi_min] # lower bound of the constraints
@@ -192,9 +209,9 @@ def main():
     beta = 2
     
     # ------- solve with sub-iterations -------
-    for i in range(1,7):
+    for i in range(1,2):
         cu = [Volume_Upper,phi_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta) # create object class
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,i) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -208,11 +225,12 @@ def main():
         )
         
         # ------ Solver Settings ----
-        if (i == 1):
-            max_iter = 150
+        if (i==1):
+            max_iter = 75
         else:
-            max_iter = 100
-            
+            max_iter = 25
+        
+        
         TopOpt_problem.add_option('linear_solver', 'ma57')
         TopOpt_problem.add_option('max_iter', max_iter) 
         TopOpt_problem.add_option('accept_after_max_steps', 10)
@@ -227,9 +245,9 @@ def main():
         
         # phi_max according to paper
         if (i==7):
-            phi_max = 0.075
+            phi_max = 0.075*100
         else:
-            phi_max = 0.35
+            phi_max = 0.35*100
             
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
