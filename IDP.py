@@ -9,7 +9,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,i): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,rho_filt2,r_min,RHO,find_area,alpha,beta,i): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -23,6 +23,7 @@ class cantilever:
         self.uh = uh
         self.rho = rho
         self.rho_filt = rho_filt
+        self.rho_filt2 = rho_filt2
         self.r_min = r_min
         self.RHO = RHO
         self.find_area = find_area
@@ -54,7 +55,7 @@ class cantilever:
     def tanh_filter(self,eta):
         numerator = np.tanh(self.beta * eta) + np.tanh(self.beta * (self.rho_filt.dat.data - eta))
         denominator = np.tanh(self.beta * eta) + np.tanh(self.beta * (1 - eta))
-        self.rho_filt.vector()[:] = numerator/denominator
+        self.rho_filt2.vector()[:] = numerator/denominator
         
     #------ end of class attributes for computations -----------
 
@@ -69,7 +70,7 @@ class cantilever:
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.outfile3.write(self.rho_filt)
         
-        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
+        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equation
         
         # ------- Forward Problem -START -------------
         lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
@@ -102,7 +103,7 @@ class cantilever:
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
 
         # ----------- forward problem - start ------------
-        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p
+        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p
         lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
         mu = E/(2*(1+self.nu))
 
@@ -137,10 +138,10 @@ class cantilever:
         self.HH_filter()
         self.tanh_filter(0.5)
         
-        Volume = assemble(self.rho_filt*dx)
+        Volume = assemble(self.rho_filt2*dx)
         
         # Intermediate Density Penalisation
-        self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
+        self.IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
 
         return np.array((Volume,self.IDP))
     
@@ -152,12 +153,12 @@ class cantilever:
         self.HH_filter()
         self.tanh_filter(0.5)
         
-        Volume = assemble(self.rho_filt*dx)
+        Volume = assemble(self.rho_filt2*dx)
         c = Control(self.rho)
         jac1 = compute_gradient(Volume,c)
         
         # gradient of the IDP Function
-        self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
+        self.IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
         jac2 = compute_gradient(self.IDP,c)
         
         return np.concatenate((jac1.dat.data,jac2.dat.data))
@@ -191,6 +192,7 @@ def main():
     rho = Function(RHO)
     rho_init = Function(RHO)
     rho_filt = Function(RHO)
+    rho_filt2 = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
 
     # ------ create optimiser -----
@@ -209,9 +211,9 @@ def main():
     beta = 2
     
     # ------- solve with sub-iterations -------
-    for i in range(1,2):
+    for i in range(1,4):
         cu = [Volume_Upper,phi_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,i) # create object class
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,rho_filt2,r_min,RHO,find_area,alpha,beta,i) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -226,7 +228,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 75
+            max_iter = 60
         else:
             max_iter = 25
         
