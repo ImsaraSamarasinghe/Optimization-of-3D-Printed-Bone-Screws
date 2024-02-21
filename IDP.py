@@ -9,7 +9,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,i): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -29,10 +29,8 @@ class cantilever:
         self.alpha = alpha
         self.IDP = None
         self.beta = beta
-        self.i = i
-        self.outfile1 = File(f"Design_Variable_1.pvd")
-        self.outfile2 = File(f"HelmHoltzFilter_1.pvd")
-        self.outfile3 = File(f"ProjectionFilter_1.pvd")
+        self.lambda_ = None
+        self.mu = None
 
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -42,8 +40,8 @@ class cantilever:
         bc = []
         solve(A==L, self.rho_filt, bcs=bc)
 
-    def sigma(self,u,lambda_,mu): # stress Tensor
-        return lambda_ * div(u) * Identity(2) + 2 * mu * self.epsilon(u)
+    def sigma(self,u): # stress Tensor
+        return self.lambda_ * div(u) * Identity(2) + 2 * self.mu * self.epsilon(u)
 
     def epsilon(self,u): # Strain Tensor
         return 0.5 * (grad(u) + grad(u).T)
@@ -55,36 +53,26 @@ class cantilever:
         numerator = np.tanh(self.beta * eta) + np.tanh(self.beta * (self.rho_filt.dat.data - eta))
         denominator = np.tanh(self.beta * eta) + np.tanh(self.beta * (1 - eta))
         self.rho_filt.vector()[:] = numerator/denominator
-        
+    
+    def forward(self):
+        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
+        self.lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
+        self.mu = E/(2*(1+self.nu))
+        a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
+        l = inner(self.t,self.v)*ds(2)
+        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])##NOTE:::BC1 REMOVED
+        forward_solver = LinearVariationalSolver(forward_problem)
+        forward_solver.solve()
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
     def objective(self,x):
         self.rho.vector()[:] = x # Assign new densities to rho
-        self.outfile1.write(self.rho)
-        
         self.HH_filter() # filter densities
-        self.outfile2.write(self.rho_filt)
-        
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
-        self.outfile3.write(self.rho_filt)
-        
-        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
-        
-        # ------- Forward Problem -START -------------
-        lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
-        mu = E/(2*(1+self.nu))
-
-        a = inner(self.sigma(self.u,lambda_,mu),self.epsilon(self.v))*dx
-        l = inner(self.t,self.v)*ds(2)
-
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])##NOTE:::BC1 REMOVED
-        forward_solver = LinearVariationalSolver(forward_problem)
-        forward_solver.solve()
-        # ------ Forward Problem -END ----------------
-        
+        self.forward() # forward problem
         # Find the new objective
-        s = self.sigma(self.uh,lambda_,mu)
+        s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
         Force_lower = assemble(s[0,1]*ds(3))
         area_upper = assemble(self.find_area*ds(4))
@@ -100,23 +88,9 @@ class cantilever:
         self.rho.vector()[:] = x # assign new densities to rho
         self.HH_filter() # filter rho
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
-
-        # ----------- forward problem - start ------------
-        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p
-        lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
-        mu = E/(2*(1+self.nu))
-
-        a = inner(self.sigma(self.u,lambda_,mu),self.epsilon(self.v))*dx
-        l = inner(self.t,self.v)*ds(2)
-
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])##NOTE:::BC1 REMOVED
-        forward_solver = LinearVariationalSolver(forward_problem)
-        forward_solver.solve()
-        # --------- forward problem - end -----------------
-        
+        self.forward() # forward problem
         # --- find gradient ------
-        # Find the new objective
-        s = self.sigma(self.uh,lambda_,mu)
+        s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
         Force_lower = assemble(s[0,1]*ds(3))
         area_upper = assemble(self.find_area*ds(4))
@@ -163,6 +137,8 @@ class cantilever:
         return np.concatenate((jac1.dat.data,jac2.dat.data))
 
 def main():
+    # plotting settings
+    plt.style.use("dark_background")
     # Times
     t1 = 0
     # ------ problem parameters ------------
@@ -201,17 +177,17 @@ def main():
     
     Volume_Lower = 0
     Volume_Upper = VolFrac
-    phi_max = 50
+    phi_max = 100
     phi_min = 0
 
     cl = [Volume_Lower,phi_min] # lower bound of the constraints
-    alpha = 0.0000001
-    beta = 2
+    alpha = 0.0000001 # value of alpha
+    beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,2):
+    for i in range(1,4):
         cu = [Volume_Upper,phi_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,i) # create object class
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -226,7 +202,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 75
+            max_iter = 50
         else:
             max_iter = 25
         
@@ -238,6 +214,8 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
+        
+        print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
         rho_init.vector()[:] = np.array(rho_opt) # Assign optimised rho to rho_init for next iteration
@@ -253,9 +231,16 @@ def main():
         beta = 4*i # Update beta according to paper
         
         # write new file with each iteration
-        filename = f"iteration_{i}.pvd"
+        filename = f"/home/is420/MEng_project_controlled/IDPresults/iteration_{i}.pvd"
         File(filename).write(rho_init)
-    
+        
+        # write png files
+        fig, axes = plt.subplots()
+        collection = tripcolor(rho, axes=axes, cmap='Greys')
+        colorbar = fig.colorbar(collection);
+        colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
+        plt.gca().set_aspect(1)
+        plt.savefig(f"/home/is420/MEng_project_controlled/IDPresults/iteration100_test_{i}.png")
 
 if __name__ == '__main__':
     main()
