@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 continue_annotation() # start tape
 
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC,v,u,uh,rho,rho_filt,r_min,RHO):
+    def __init__(self,E_max,nu,p,E_min,t,BC,v,u,uh,rho,rho_filt,r_min,RHO,outfile):
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -20,6 +20,7 @@ class cantilever:
         self.rho_filt = rho_filt
         self.r_min = r_min
         self.RHO = RHO
+        self.outfile = outfile
 
     # class attributes for computations
     def HH_filter(self):
@@ -57,6 +58,11 @@ class cantilever:
         # forward problem - end
         J = assemble(inner(self.t,self.uh)*ds(2))
         #print("End objective")
+        
+        # create animation
+        self.outfile.write(self.rho_filt)
+        # end create animation
+        
         return J
 
     def gradient(self,x):
@@ -101,6 +107,7 @@ class cantilever:
         return jac.dat.data
 
 def main():
+    outfile = File("/home/is420/MEng_project_controlled/outInterim/CantileverAnimated.pvd")
     # problem parameters
     L, W = 5.0, 1.0 # domain size
     nx, ny = 150, 30 # mesh size
@@ -135,7 +142,7 @@ def main():
     cl = [0] # lower bound of the volume constraint
     cu = [VolFrac] # upper bound of the volume constraint
 
-    obj_cantilever = cantilever(E_max,nu,p,E_min,t,BC,v,u,uh,rho,rho_filt,r_min,RHO)
+    obj_cantilever = cantilever(E_max,nu,p,E_min,t,BC,v,u,uh,rho,rho_filt,r_min,RHO,outfile)
 
     TopOpt_problem = cyipopt.Problem(
         n = len(x0),
@@ -148,7 +155,7 @@ def main():
     )
 
     TopOpt_problem.add_option('linear_solver', 'ma57')
-    TopOpt_problem.add_option('max_iter', 180) # max 220
+    TopOpt_problem.add_option('max_iter', 50) # max 220
     TopOpt_problem.add_option('accept_after_max_steps', 10) # was 10
     TopOpt_problem.add_option('hessian_approximation', 'limited-memory')
     TopOpt_problem.add_option('mu_strategy', 'adaptive')
@@ -160,11 +167,16 @@ def main():
     rho.vector()[:] = np.array(rho_opt)
     
     # --- Plot ---
+    plt.style.use("dark_background")
     fig, axes = plt.subplots()
     collection = tripcolor(rho, axes=axes, cmap='Greys')
-    fig.colorbar(collection);
-    plt.savefig("Optimised Beam.png")
+    colorbar = fig.colorbar(collection);
+    colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
+    plt.gca().set_aspect(1)
+    plt.savefig("/home/is420/MEng_project_controlled/outInterim/Optimised Beam.png")
     plt.show()
+    
+    File("/home/is420/MEng_project_controlled/outInterim/CantileverBeam.pvd").write(rho)
 
 if __name__ == '__main__':
     main()
