@@ -115,8 +115,12 @@ class cantilever:
         
         # Intermediate Density Penalisation
         self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
+        
+        # Magnitude constraint
+        self.forward()
+        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
 
-        return np.array((Volume,self.IDP))
+        return np.array((Volume,self.IDP,mag))
     
     
     # function to find jacobian
@@ -134,7 +138,12 @@ class cantilever:
         self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
         jac2 = compute_gradient(self.IDP,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data))
+        # gradient of the mangitude
+        self.forward()
+        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        jac3 = compute_gradient(mag,c)
+        
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data))
 
 def main():
     # plotting settings
@@ -145,7 +154,7 @@ def main():
     L, W = 5.0, 1.0 # domain size
     nx, ny = 150, 30 # mesh size
     VolFrac = 0.5*L*W # Volume Fraction
-    E_max, nu = 1, 0.3 # material properties # E_max = 1e5
+    E_max, nu = 110e9, 0.3 # material properties # E_max = 1e5
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([1,0]) # load # t = 2000
 
@@ -175,18 +184,21 @@ def main():
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
     lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
     
+    # --- constraints ---
     Volume_Lower = 0
     Volume_Upper = VolFrac
     phi_max = 100
     phi_min = 0
+    u_min = 0
+    u_max = 1/10
 
-    cl = [Volume_Lower,phi_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,4):
-        cu = [Volume_Upper,phi_max] #Update the constraints 
+    for i in range(1,2):
+        cu = [Volume_Upper,phi_max,u_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta) # create object class
         
         # Setup problem
@@ -202,7 +214,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 50
+            max_iter = 70
         else:
             max_iter = 25
         
@@ -231,7 +243,7 @@ def main():
         beta = 4*i # Update beta according to paper
         
         # write new file with each iteration
-        filename = f"/home/is420/MEng_project_controlled/IDPresults/iteration_{i}.pvd"
+        filename = f"/home/is420/MEng_project_controlled/newIDPresults/iteration_{i}.pvd"
         File(filename).write(rho_init)
         
         # write png files
@@ -240,7 +252,7 @@ def main():
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
         plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/IDPresults/iteration100_test_{i}.png")
+        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_test_{i}.png")
 
 if __name__ == '__main__':
     main()
