@@ -119,10 +119,10 @@ class cantilever:
         self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
         
         # Magnitude constraint
-        ##self.forward()
-        ##mag = assemble(inner(self.uh,Constant([1,0]))*ds(2))
+        self.forward()
+        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
 
-        return np.array((Volume,self.IDP))
+        return np.array((Volume,self.IDP,self.mag))
     
     
     # function to find jacobian
@@ -141,15 +141,15 @@ class cantilever:
         jac2 = compute_gradient(self.IDP,c)
         
         # gradient of the mangitude
-        ##self.forward()
-       ## mag = assemble(inner(self.uh,Constant([1,0]))*ds(2))
-        ##jac3 = compute_gradient(mag,c)
+        self.forward()
+        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        jac3 = compute_gradient(mag,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data))
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data))
 
 def main():
     # plotting settings
-    file = File(f"/home/is420/MEng_project_controlled/IDPresults/uh.pvd")
+    file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh.pvd")
     plt.style.use("dark_background")
     # Times
     t1 = 0
@@ -193,15 +193,15 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 1/10
+    u_max = 1
 
-    cl = [Volume_Lower,phi_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
     for i in range(1,5):
-        cu = [Volume_Upper,phi_max] #Update the constraints 
+        cu = [Volume_Upper,phi_max,u_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,file) # create object class
         
         # Setup problem
@@ -255,7 +255,7 @@ def main():
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
         plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/IDPresults/iteration_test_{i}.png")
+        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_{i}.png")
 
 if __name__ == '__main__':
     main()
