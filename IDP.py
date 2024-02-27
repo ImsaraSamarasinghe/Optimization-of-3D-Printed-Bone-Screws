@@ -9,7 +9,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,file): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -31,6 +31,7 @@ class cantilever:
         self.beta = beta
         self.lambda_ = None
         self.mu = None
+        self.file = file
 
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -71,6 +72,7 @@ class cantilever:
         self.HH_filter() # filter densities
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
+        self.file.write(self.uh)
         # Find the new objective
         s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
@@ -117,10 +119,10 @@ class cantilever:
         self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
         
         # Magnitude constraint
-        self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        ##self.forward()
+        ##mag = assemble(inner(self.uh,Constant([1,0]))*ds(2))
 
-        return np.array((Volume,self.IDP,mag))
+        return np.array((Volume,self.IDP))
     
     
     # function to find jacobian
@@ -139,14 +141,15 @@ class cantilever:
         jac2 = compute_gradient(self.IDP,c)
         
         # gradient of the mangitude
-        self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
-        jac3 = compute_gradient(mag,c)
+        ##self.forward()
+       ## mag = assemble(inner(self.uh,Constant([1,0]))*ds(2))
+        ##jac3 = compute_gradient(mag,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data))
+        return np.concatenate((jac1.dat.data,jac2.dat.data))
 
 def main():
     # plotting settings
+    file = File(f"/home/is420/MEng_project_controlled/IDPresults/uh.pvd")
     plt.style.use("dark_background")
     # Times
     t1 = 0
@@ -154,7 +157,7 @@ def main():
     L, W = 5.0, 1.0 # domain size
     nx, ny = 150, 30 # mesh size
     VolFrac = 0.5*L*W # Volume Fraction
-    E_max, nu = 110e9, 0.3 # material properties # E_max = 1e5
+    E_max, nu = 1, 0.3 # material properties # E_max = 1e5
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([1,0]) # load # t = 2000
 
@@ -192,14 +195,14 @@ def main():
     u_min = 0
     u_max = 1/10
 
-    cl = [Volume_Lower,phi_min,u_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,2):
-        cu = [Volume_Upper,phi_max,u_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta) # create object class
+    for i in range(1,5):
+        cu = [Volume_Upper,phi_max] #Update the constraints 
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,file) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -214,9 +217,9 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 70
+            max_iter = 60
         else:
-            max_iter = 25
+            max_iter = 30
         
         
         TopOpt_problem.add_option('linear_solver', 'ma57')
@@ -252,7 +255,7 @@ def main():
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
         plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_test_{i}.png")
+        plt.savefig(f"/home/is420/MEng_project_controlled/IDPresults/iteration_test_{i}.png")
 
 if __name__ == '__main__':
     main()
