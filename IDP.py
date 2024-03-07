@@ -122,7 +122,7 @@ class cantilever:
         self.forward()
         mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
 
-        return np.array((Volume,self.IDP,self.mag))
+        return np.array((Volume,self.IDP,mag))
     
     
     # function to find jacobian
@@ -157,9 +157,9 @@ def main():
     L, W = 5.0, 1.0 # domain size
     nx, ny = 150, 30 # mesh size
     VolFrac = 0.5*L*W # Volume Fraction
-    E_max, nu = 1, 0.3 # material properties # E_max = 1e5
+    E_max, nu = 110e9, 0.3 # material properties # code tested at 1 kinda worked # new youngs modulus titanium alloy 
     p, E_min = 3.0, 1e-3 # SIMP Values
-    t = Constant([1,0]) # load # t = 2000
+    t = Constant([2000,0]) # load # t = 2000
 
     # ----- setup BC, mesh, and function spaces ----
     mesh = RectangleMesh(nx,ny,L,W)
@@ -193,7 +193,7 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 1
+    u_max = 2*9e-9 # Value seen with full titanium block pulled out.
 
     cl = [Volume_Lower,phi_min,u_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
@@ -217,7 +217,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 60
+            max_iter = 90
         else:
             max_iter = 30
         
@@ -231,8 +231,8 @@ def main():
         TopOpt_problem.add_option('tol', 1e-5)
         
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
-        
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
+        print(f" ##### ending sub-it: {i} #####")
         rho_init.vector()[:] = np.array(rho_opt) # Assign optimised rho to rho_init for next iteration
         x0 = rho_init.vector()[:].tolist() # Warm start the next iteration using the last iteration
         
@@ -246,7 +246,7 @@ def main():
         beta = 4*i # Update beta according to paper
         
         # write new file with each iteration
-        filename = f"/home/is420/MEng_project_controlled/newIDPresults/iteration_{i}.pvd"
+        filename = f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.pvd"
         File(filename).write(rho_init)
         
         # write png files
@@ -255,7 +255,7 @@ def main():
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
         plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_{i}.png")
+        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.png")
 
 if __name__ == '__main__':
     main()
