@@ -9,7 +9,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,file): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,iter): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -31,8 +31,14 @@ class cantilever:
         self.beta = beta
         self.lambda_ = None
         self.mu = None
-        self.file = file
-
+        self.STRESS = STRESS
+        self.x=x # x coordinates for the forcing function
+        self.ForcingFunction=0
+        self.iter = iter # iteration count
+        self.d_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh_iter_{self.iter}.pvd")
+        self.s_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/stress_folder/stresses_iter.pvd")
+        self.rho_filt2 = Function(self.RHO) # new function to store after TANH filter
+        
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
         rhof, w = TrialFunction(self.RHO), TestFunction(self.RHO)
@@ -51,19 +57,31 @@ class cantilever:
         return self.IDP
     
     def tanh_filter(self,eta):
-        numerator = np.tanh(self.beta * eta) + np.tanh(self.beta * (self.rho_filt.dat.data - eta))
-        denominator = np.tanh(self.beta * eta) + np.tanh(self.beta * (1 - eta))
-        self.rho_filt.vector()[:] = numerator/denominator
+        numerator = tanh(self.beta * eta) + tanh(self.beta * (self.rho_filt - eta))
+        denominator = tanh(self.beta * eta) + tanh(self.beta * (1 - eta))
+        self.rho_filt2.interpolate(numerator/denominator)
     
     def forward(self):
-        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt**self.p # SIMP Equation
+        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equation
         self.lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
         self.mu = E/(2*(1+self.nu))
         a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
         l = inner(self.t,self.v)*ds(2)
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])##NOTE:::BC1 REMOVED
+        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])
         forward_solver = LinearVariationalSolver(forward_problem)
         forward_solver.solve()
+    
+    def function(self):
+        self.ForcingFunction = project((tanh(asin(sin(15*self.x)))*100+1)/2,self.RHO) # Added a forcing function for edges.
+    
+    ####
+    def rec_stress(self): # stress recording ### not working
+        s = self.sigma(self.uh)
+        shear = s[0,1]
+        ss = project(shear,self.STRESS)
+        self.s_file.write(ss)
+    ####
+    
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -72,7 +90,8 @@ class cantilever:
         self.HH_filter() # filter densities
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
-        self.file.write(self.uh)
+        self.d_file.write(self.uh) # write displacement to file
+        
         # Find the new objective
         s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
@@ -91,6 +110,7 @@ class cantilever:
         self.HH_filter() # filter rho
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
+        
         # --- find gradient ------
         s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
@@ -108,49 +128,59 @@ class cantilever:
         
     # Function to evaluate constraints
     def constraints(self,x):
-        # Volume constraint
+        # Initialisation
         self.rho.vector()[:] = x
         self.HH_filter()
         self.tanh_filter(0.5)
         
-        Volume = assemble(self.rho_filt*dx)
+        # Volume Constraint
+        Volume = assemble(self.rho_filt2*dx)
         
         # Intermediate Density Penalisation
-        self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
+        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
         
-        # Magnitude constraint
+        # Magnitude constraint on the RHS boundary
         self.forward()
         mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
-
-        return np.array((Volume,self.IDP,mag))
+        
+        # Forcing Function
+        self.function()
+        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+        
+        return np.array((Volume,IDP,mag,mag2))
     
     
     # function to find jacobian
     def jacobian(self,x):
-        # gradient of the volume
+        # Initialisation
         self.rho.vector()[:] = x
         self.HH_filter()
         self.tanh_filter(0.5)
         
-        Volume = assemble(self.rho_filt*dx)
+        # gradient of the colume constraint
+        Volume = assemble(self.rho_filt2*dx)
         c = Control(self.rho)
         jac1 = compute_gradient(Volume,c)
         
         # gradient of the IDP Function
-        self.IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
-        jac2 = compute_gradient(self.IDP,c)
+        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
+        jac2 = compute_gradient(IDP,c)
         
-        # gradient of the mangitude
+        # gradient of the magnitude on the RHS boundary
         self.forward()
         mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
         jac3 = compute_gradient(mag,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data))
+        # gradient of the forcing function
+        self.function()
+        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+        jac4 = compute_gradient(mag2,c)
+        
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data))
 
 def main():
     # plotting settings
-    file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh.pvd")
-    plt.style.use("dark_background")
+    plt.style.use("default")
     # Times
     t1 = 0
     # ------ problem parameters ------------
@@ -163,8 +193,10 @@ def main():
 
     # ----- setup BC, mesh, and function spaces ----
     mesh = RectangleMesh(nx,ny,L,W)
+    x, y = SpatialCoordinate(mesh)
     V = VectorFunctionSpace(mesh,'CG',1)
     RHO = FunctionSpace(mesh,'CG',1)
+    STRESS = FunctionSpace(mesh,'CG',1) ## stress function space
     BC1 = DirichletBC(V,Constant([0,0]),1)
     BC2 = DirichletBC(V,Constant([0,0]),3)
     BC3 = DirichletBC(V,Constant([0,0]),4)
@@ -180,6 +212,9 @@ def main():
     rho_init = Function(RHO)
     rho_filt = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
+    
+    # --- Function for random intialisation ---
+    
 
     # ------ create optimiser -----
     rho_init.assign(0.5) # Assign starting initialisation for the rho field = 0.5
@@ -193,7 +228,7 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 2*9e-9 # Value seen with full titanium block pulled out.
+    u_max = 4*9e-9 # Value seen with full titanium block pulled out. (double)
 
     cl = [Volume_Lower,phi_min,u_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
@@ -202,7 +237,7 @@ def main():
     # ------- solve with sub-iterations -------
     for i in range(1,5):
         cu = [Volume_Upper,phi_max,u_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,file) # create object class
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -217,9 +252,9 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 90
+            max_iter = 170 ##90 - tested - MAX: 160 ---> 180 received alpha errors
         else:
-            max_iter = 30
+            max_iter = 80 ##30 - tested - MAX: 60
         
         
         TopOpt_problem.add_option('linear_solver', 'ma57')
@@ -233,6 +268,7 @@ def main():
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
         print(f" ##### ending sub-it: {i} #####")
+        
         rho_init.vector()[:] = np.array(rho_opt) # Assign optimised rho to rho_init for next iteration
         x0 = rho_init.vector()[:].tolist() # Warm start the next iteration using the last iteration
         
@@ -251,9 +287,10 @@ def main():
         
         # write png files
         fig, axes = plt.subplots()
-        collection = tripcolor(rho, axes=axes, cmap='Greys')
+        collection = tripcolor(rho, axes=axes, cmap='viridis')
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
+        plt.title(f"sub_iteration: {i}")
         plt.gca().set_aspect(1)
         plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.png")
 
