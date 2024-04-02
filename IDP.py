@@ -5,6 +5,7 @@ import cyipopt
 import numpy as np
 import matplotlib.pyplot as plt
 import random
+import noise
 continue_annotation() # start tape
 
 # ------- setup class --------
@@ -38,6 +39,12 @@ class cantilever:
         self.d_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh_iter_{self.iter}.pvd")
         self.s_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/stress_folder/stresses_iter.pvd")
         self.rho_filt2 = Function(self.RHO) # new function to store after TANH filter
+        self.png_count = 0
+        # -- lists for storing constraints -- 
+        self.function_constraint = []
+        self.IDP_constraint = []
+        self.Volume_constraint = []
+        self.u_constraint = []
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -72,16 +79,29 @@ class cantilever:
         forward_solver.solve()
     
     def function(self):
-        self.ForcingFunction = project((tanh(asin(sin(15*self.x)))*100+1)/2,self.RHO) # Added a forcing function for edges.
+        self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
     
     ####
-    def rec_stress(self): # stress recording ### not working
+    def rec_stress(self):
         s = self.sigma(self.uh)
         shear = s[0,1]
         ss = project(shear,self.STRESS)
-        self.s_file.write(ss)
+        
+        fig, axes = plt.subplots()
+        collection = tripcolor(ss, axes=axes, cmap='viridis')
+        colorbar = fig.colorbar(collection);
+        colorbar.set_label(r'$\sigma_{xy}$',fontsize=14,rotation=90)
+        plt.gca().set_aspect(1)
+        plt.savefig(f"/home/is420/MEng_project_controlled/PNG_shear/shear_{self.png_count}_{self.iter}.png")
+        self.png_count = self.png_count + 1
+        plt.close('all')
     ####
-    
+    def rec_constraints(self,vol,IDP,u,func):
+        self.function_constraint.append(func)
+        self.IDP_constraint.append(IDP)
+        self.Volume_constraint.append(vol)
+        self.u_constraint.append(u)
+        
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -91,7 +111,7 @@ class cantilever:
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
         self.d_file.write(self.uh) # write displacement to file
-        
+        self.rec_stress()
         # Find the new objective
         s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
@@ -147,6 +167,8 @@ class cantilever:
         self.function()
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
         
+        self.rec_constraints(Volume,IDP,mag,mag2)
+        
         return np.array((Volume,IDP,mag,mag2))
     
     
@@ -178,6 +200,28 @@ class cantilever:
         
         return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data))
 
+def constraint_history(constraint,str,sub_iter):
+    x = []
+    for i in range(1,len(constraint)+1):
+        x.append(i)
+    fig, axes = plt.subplots()
+    axes.plot(x,constraint)
+    plt.xlabel('iteration')
+    plt.ylabel('value')
+    plt.title(str)
+    plt.savefig(f"/home/is420/MEng_project_controlled/constraint_history/{str}_sub-iter_{sub_iter}.png")
+    plt.close('all')
+
+def function_plot(function,str,sub_iter):
+    fig, axes = plt.subplots()
+    collection = tripcolor(function, axes=axes, cmap='viridis')
+    colorbar = fig.colorbar(collection);
+    colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
+    plt.title(f"sub_iteration: {sub_iter}")
+    plt.gca().set_aspect(1)
+    plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/{str}_sub-iter{sub_iter}.png")
+    plt.close('all')
+    
 def main():
     # plotting settings
     plt.style.use("default")
@@ -185,8 +229,8 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size
-    nx, ny = 150, 30 # mesh size
-    VolFrac = 0.5*L*W # Volume Fraction
+    nx, ny = 150, 50 # mesh size
+    VolFrac = 0.3*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties # code tested at 1 kinda worked # new youngs modulus titanium alloy 
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([2000,0]) # load # t = 2000
@@ -210,33 +254,111 @@ def main():
     uh = Function(V)
     rho = Function(RHO)
     rho_init = Function(RHO)
+    rho_temp = Function(RHO) # used for initiliase function
     rho_filt = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
     
     # --- Function for random intialisation ---
-    
+    def Initialise_rho():
+        # Define the size and spacing of the diamonds
+        spacing_x = 0.1
+        spacing_y = 0.1
 
+        # Evaluate function to create a repeated diamond pattern
+        with rho_init.dat.vec as rho_vec:
+            for i, x in enumerate(mesh.coordinates.dat.data):
+                # Compute the position within the repeated pattern
+                pattern_x = x[0] % (2 * spacing_x)
+                pattern_y = x[1] % (2 * spacing_y)
+                
+                # Compute the distance from the center of the current pattern cell
+                distance_x = abs(pattern_x - spacing_x)
+                distance_y = abs(pattern_y - spacing_y)
+                
+                # Assign values to create a diamond pattern
+                if distance_x / spacing_x + distance_y / spacing_y <= 1:
+                    rho_vec[i] = 1.0
+                else:
+                    rho_vec[i] = 0.0
+
+
+        def HH_filter():
+            r_min=0.12
+            rhof, w = TrialFunction(RHO), TestFunction(RHO)
+            A = (r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
+            L = rho_init*w*dx
+            bc = []
+            solve(A==L, rho_temp, bcs=bc)
+        
+        HH_filter()
+        
+    def striped():
+        # Define the angle of the stripes (in radians)
+        stripe_angle = np.pi  # 30 degrees
+
+        # Define the spacing between the stripes
+        stripe_spacing = 0.2
+
+        # Define the width of the central column
+        central_column_width = 0.4
+
+        # Evaluate function to create the combined pattern
+        with rho_init.dat.vec as rho_vec:
+            for i, x in enumerate(mesh.coordinates.dat.data):
+                # Compute the position relative to the centerline of the stripes
+                position_x = x[0] * np.cos(stripe_angle) + x[1] * np.sin(stripe_angle)
+                
+                # Compute the distance from the centerline of the stripes
+                distance = abs(position_x - W / 2) % (2 * stripe_spacing)
+                
+                # Assign values based on the position relative to the central column
+                if abs(x[1] - W / 2) <= central_column_width / 2:
+                    rho_vec[i] = 1.0
+                elif distance <= stripe_spacing:
+                    rho_vec[i] = 1.0
+                else:
+                    rho_vec[i] = 0.0
+                    
+        def HH_filter():
+            r_min=0.08
+            rhof, w = TrialFunction(RHO), TestFunction(RHO)
+            A = (r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
+            L = rho_init*w*dx
+            bc = []
+            solve(A==L, rho_temp, bcs=bc)
+
+        HH_filter()
+
+    fig, axes = plt.subplots()
+    collection = tripcolor(rho_temp, axes=axes, cmap='viridis')
+    colorbar = fig.colorbar(collection);
+    colorbar.set_label(r'$\rho$ temporary',fontsize=14,rotation=90)
+    plt.gca().set_aspect(1)
+    plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/initialisation of rho.png")
     # ------ create optimiser -----
     rho_init.assign(0.5) # Assign starting initialisation for the rho field = 0.5
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
     lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
     
-    # --- constraints ---
+    # --- constraints (max & min)---
     Volume_Lower = 0
     Volume_Upper = VolFrac
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 4*9e-9 # Value seen with full titanium block pulled out. (double)
+    u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (double)
+    force_func_max = 1
+    force_func_min = 0
+    # ------------------------------
 
-    cl = [Volume_Lower,phi_min,u_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
     for i in range(1,5):
-        cu = [Volume_Upper,phi_max,u_max] #Update the constraints 
+        cu = [Volume_Upper,phi_max,u_max,force_func_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
         # Setup problem
@@ -252,9 +374,9 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 170 ##90 - tested - MAX: 160 ---> 180 received alpha errors
+            max_iter = 170 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
         else:
-            max_iter = 80 ##30 - tested - MAX: 60
+            max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
         
         TopOpt_problem.add_option('linear_solver', 'ma57')
@@ -293,6 +415,16 @@ def main():
         plt.title(f"sub_iteration: {i}")
         plt.gca().set_aspect(1)
         plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.png")
+        plt.close("all")
+        
+        # create plots for the constraints
+        constraint_history(obj.function_constraint,"function_constraint",i)
+        constraint_history(obj.IDP_constraint,"IDP_constraint",i)
+        constraint_history(obj.Volume_constraint,"Volume_constraint",i)
+        constraint_history(obj.u_constraint,"u_constraint",i)
+        
+        # plot functions
+        function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
 
 if __name__ == '__main__':
     main()
