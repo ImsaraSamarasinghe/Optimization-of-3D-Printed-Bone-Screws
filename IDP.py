@@ -45,6 +45,8 @@ class cantilever:
         self.IDP_constraint = []
         self.Volume_constraint = []
         self.u_constraint = []
+        # --- Lists for storing objective history ---
+        self.objective_history = []
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -101,7 +103,9 @@ class cantilever:
         self.IDP_constraint.append(IDP)
         self.Volume_constraint.append(vol)
         self.u_constraint.append(u)
-        
+    
+    def rec_objective(self,J):
+        self.objective_history.append(J)
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -121,6 +125,8 @@ class cantilever:
         avg_ss_upper = Force_upper/area_upper
         avg_ss_lower = Force_lower/area_lower
         J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        
+        self.rec_objective(J)
         
         return J
         
@@ -417,6 +423,9 @@ def main():
         constraint_history(obj.IDP_constraint,"IDP_constraint",i)
         constraint_history(obj.Volume_constraint,"Volume_constraint",i)
         constraint_history(obj.u_constraint,"u_constraint",i)
+        
+        # create plot of the objective
+        constraint_history(obj.objective_history,"Objective_History",i)
         
         # plot functions
         function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
