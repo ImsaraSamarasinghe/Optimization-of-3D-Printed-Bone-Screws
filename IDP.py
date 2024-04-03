@@ -229,8 +229,8 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size
-    nx, ny = 150, 50 # mesh size
-    VolFrac = 0.3*L*W # Volume Fraction
+    nx, ny = 150, 60 # mesh size
+    VolFrac = 0.4*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties # code tested at 1 kinda worked # new youngs modulus titanium alloy 
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([2000,0]) # load # t = 2000
@@ -329,14 +329,9 @@ def main():
 
         HH_filter()
 
-    fig, axes = plt.subplots()
-    collection = tripcolor(rho_temp, axes=axes, cmap='viridis')
-    colorbar = fig.colorbar(collection);
-    colorbar.set_label(r'$\rho$ temporary',fontsize=14,rotation=90)
-    plt.gca().set_aspect(1)
-    plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/initialisation of rho.png")
     # ------ create optimiser -----
     rho_init.assign(0.5) # Assign starting initialisation for the rho field = 0.5
+    function_plot(rho_init,"initialisation_rho_","inital") # plot the initialised rho domain
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
     lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
@@ -348,7 +343,7 @@ def main():
     phi_min = 0
     u_min = 0
     u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (double)
-    force_func_max = 1
+    force_func_max = 2
     force_func_min = 0
     # ------------------------------
 
@@ -374,7 +369,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 170 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 150 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -386,7 +381,7 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
-        
+
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
         print(f" ##### ending sub-it: {i} #####")
