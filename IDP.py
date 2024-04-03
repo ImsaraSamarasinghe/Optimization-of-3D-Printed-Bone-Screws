@@ -45,6 +45,8 @@ class cantilever:
         self.IDP_constraint = []
         self.Volume_constraint = []
         self.u_constraint = []
+        # -- new values -- 
+        self.max_shear = 2138.973
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -79,7 +81,7 @@ class cantilever:
         forward_solver.solve()
     
     def function(self):
-        self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
+        self.ForcingFunction = project((tanh(asin(sin(20*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges. was 15x
     
     ####
     def rec_stress(self):
@@ -114,13 +116,10 @@ class cantilever:
         self.rec_stress()
         # Find the new objective
         s = self.sigma(self.uh)
-        Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
-        area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
-        avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        shear = s[0,1]
+        ss = project(shear,self.STRESS)
+        
+        J = assemble((((ss*ss)**0.5)/self.max_shear)*dx)
         
         return J
         
@@ -133,13 +132,9 @@ class cantilever:
         
         # --- find gradient ------
         s = self.sigma(self.uh)
-        Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
-        area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
-        avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        shear = s[0,1]
+        ss = project(shear,self.STRESS)
+        J = assemble((((ss*ss)**0.5)/self.max_shear)*dx)
         
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
