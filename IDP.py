@@ -45,6 +45,8 @@ class cantilever:
         self.IDP_constraint = []
         self.Volume_constraint = []
         self.u_constraint = []
+        # -- objective storage ---
+        self.objective_history = []
         # -- new values -- 
         self.max_shear = 2138.973
         
@@ -71,7 +73,7 @@ class cantilever:
         self.rho_filt2.interpolate(numerator/denominator)
     
     def forward(self):
-        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equation
+        E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equationclear
         self.lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
         self.mu = E/(2*(1+self.nu))
         a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
@@ -119,8 +121,8 @@ class cantilever:
         shear = s[0,1]
         ss = project(shear,self.STRESS)
         
-        J = assemble((((ss*ss)**0.5)/self.max_shear)*dx)
-        
+        J = assemble((((inner(ss,ss))**0.5)/self.max_shear)*dx)
+        self.objective_history.append(J)
         return J
         
     # Function for the creation of the gradient
@@ -134,7 +136,7 @@ class cantilever:
         s = self.sigma(self.uh)
         shear = s[0,1]
         ss = project(shear,self.STRESS)
-        J = assemble((((ss*ss)**0.5)/self.max_shear)*dx)
+        J = assemble((((inner(ss,ss))**0.5)/self.max_shear)*dx)
         
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
@@ -156,7 +158,7 @@ class cantilever:
         
         # Magnitude constraint on the RHS boundary
         self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        mag = assemble(inner(self.uh,Constant([1,0]))*ds(2))
         
         # Forcing Function
         self.function()
@@ -185,7 +187,7 @@ class cantilever:
         
         # gradient of the magnitude on the RHS boundary
         self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        mag = assemble(inner(self.uh,Constant([1,0]))*ds(2))
         jac3 = compute_gradient(mag,c)
         
         # gradient of the forcing function
@@ -224,8 +226,8 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size
-    nx, ny = 150, 60 # mesh size
-    VolFrac = 0.4*L*W # Volume Fraction
+    nx, ny = 150, 60 # mesh size # usally set to 60
+    VolFrac = 0.3*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties # code tested at 1 kinda worked # new youngs modulus titanium alloy 
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([2000,0]) # load # t = 2000
@@ -241,7 +243,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 0.08
+    r_min = 0.06 # usually set to 0.08
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -334,11 +336,11 @@ def main():
     # --- constraints (max & min)---
     Volume_Lower = 0
     Volume_Upper = VolFrac
-    phi_max = 100
+    phi_max = 4.4 # usually 100
     phi_min = 0
     u_min = 0
-    u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (double)
-    force_func_max = 2
+    u_max = 6.35e-9 # Value seen with full titanium block pulled out. (double)
+    force_func_max = 1
     force_func_min = 0
     # ------------------------------
 
@@ -364,18 +366,18 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 150 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 170 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
         else:
-            max_iter = 50 ##30 - tested - MAX: 60 currently at 50
+            max_iter = 60 ##30 - tested - MAX: 60 currently at 50
         
         
         TopOpt_problem.add_option('linear_solver', 'ma57')
         TopOpt_problem.add_option('max_iter', max_iter) 
-        TopOpt_problem.add_option('accept_after_max_steps', 10)
+        TopOpt_problem.add_option('accept_after_max_steps', 100)
         TopOpt_problem.add_option('hessian_approximation', 'limited-memory')
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
-        TopOpt_problem.add_option('tol', 1e-5)
+        TopOpt_problem.add_option('tol', 1e-6)
 
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
@@ -386,9 +388,9 @@ def main():
         
         # phi_max according to paper
         if (i==7):
-            phi_max = 0.075*100
+            phi_max = 0.075*4.4
         else:
-            phi_max = 0.35*100
+            phi_max = 0.35*4.4
             
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
@@ -412,7 +414,7 @@ def main():
         constraint_history(obj.IDP_constraint,"IDP_constraint",i)
         constraint_history(obj.Volume_constraint,"Volume_constraint",i)
         constraint_history(obj.u_constraint,"u_constraint",i)
-        
+        constraint_history(obj.objective_history,"Objective_History",i)
         # plot functions
         function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
 
