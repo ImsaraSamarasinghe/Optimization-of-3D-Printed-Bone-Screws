@@ -49,6 +49,7 @@ class cantilever:
         self.objective_history = []
         # -- new values -- 
         self.max_shear = 2138.973
+        self.p_norm = 50
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -118,10 +119,14 @@ class cantilever:
         self.rec_stress()
         # Find the new objective
         s = self.sigma(self.uh)
-        shear = s[0,1]
-        ss = project(shear,self.STRESS)
-        
-        J = assemble((((inner(ss,ss))**0.5)/self.max_shear)*dx)
+        Force_upper = assemble(s[0,1]*ds(4))
+        Force_lower = assemble(s[0,1]*ds(3))
+        area_upper = assemble(self.find_area*ds(4))
+        area_lower = assemble(self.find_area*ds(3))
+        avg_ss_upper = Force_upper/area_upper
+        avg_ss_lower = Force_lower/area_lower
+        J = 0.8 * assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3)) + 0.2 * assemble((s[0,1]/self.max_shear)**self.p_norm*dx)**(1/self.p_norm)
+
         self.objective_history.append(J)
         return J
         
@@ -134,9 +139,13 @@ class cantilever:
         
         # --- find gradient ------
         s = self.sigma(self.uh)
-        shear = s[0,1]
-        ss = project(shear,self.STRESS)
-        J = assemble((((inner(ss,ss))**0.5)/self.max_shear)*dx)
+        Force_upper = assemble(s[0,1]*ds(4))
+        Force_lower = assemble(s[0,1]*ds(3))
+        area_upper = assemble(self.find_area*ds(4))
+        area_lower = assemble(self.find_area*ds(3))
+        avg_ss_upper = Force_upper/area_upper
+        avg_ss_lower = Force_lower/area_lower
+        J = 0.8 * assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3)) + 0.2 * assemble((s[0,1]/self.max_shear)**self.p_norm*dx)**(1/self.p_norm)
         
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
@@ -339,7 +348,7 @@ def main():
     phi_max = 4.4 # usually 100
     phi_min = 0
     u_min = 0
-    u_max = 6.35e-9 # Value seen with full titanium block pulled out. (double)
+    u_max = 10*6.35e-9 # Value seen with full titanium block pulled out. (double)
     force_func_max = 1
     force_func_min = 0
     # ------------------------------
@@ -366,7 +375,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 170 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 180 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
         else:
             max_iter = 60 ##30 - tested - MAX: 60 currently at 50
         
