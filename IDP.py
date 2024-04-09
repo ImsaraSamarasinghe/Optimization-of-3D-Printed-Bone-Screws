@@ -49,6 +49,9 @@ class cantilever:
         self.objective_history = []
         # --- Store rho ----
         self.rho_file = File(f"/home/is420/MEng_project_controlled/PNG_rho/rho_iter_{self.iter}.pvd")
+        # ---- store force histories ----
+        self.upper_force = []
+        self.lower_force = []
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -108,6 +111,10 @@ class cantilever:
     
     def rec_objective(self,J):
         self.objective_history.append(J)
+    
+    def rec_forces(self,upper,lower):
+        self.upper_force.append(upper)
+        self.lower_force.append(lower)
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -178,7 +185,13 @@ class cantilever:
         
         self.rec_constraints(Volume,IDP,mag,mag2)
         
-        return np.array((Volume,IDP,mag,mag2))
+        # expansion forces
+        s = self.sigma(self.uh) # stress Tensor
+        Force_3 = assemble(s[1,1]*ds(3)) # sigma_yy over boundary 3 -> Force_yy
+        Force_4 = assemble(s[1,1]*ds(4)) # sigma_yy over boundary 4 -> Force_xx
+        self.rec_forces(Force_4,Force_3) # record forces
+        
+        return np.array((Volume,IDP,mag,mag2,Force_3,Force_4))
     
     
     # function to find jacobian
@@ -207,7 +220,14 @@ class cantilever:
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
         jac4 = compute_gradient(mag2,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data))
+        # expansion forces - gradients
+        s = self.sigma(self.uh) # stress Tensor
+        Force_3 = assemble(s[1,1]*ds(3)) # sigma_yy over boundary 3 -> Force_yy
+        Force_4 = assemble(s[1,1]*ds(4)) # sigma_yy over boundary 4 -> Force_xx
+        Force_3_jac = compute_gradient(Force_3,c)
+        Force_4_jac = compute_gradient(Force_4,c)
+        
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,Force_3_jac.dat.data,Force_4_jac.dat.data))
 
 def constraint_history(constraint,str,sub_iter):
     x = []
@@ -229,6 +249,18 @@ def function_plot(function,str,sub_iter):
     plt.title(f"sub_iteration: {sub_iter}")
     plt.gca().set_aspect(1)
     plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/{str}_sub-iter{sub_iter}.png")
+    plt.close('all')
+
+def force_history(force_array,str,sub_iter):
+    x = []
+    for i in range(1,len(force_array)+1):
+        x.append(i)
+    fig, axes = plt.subplots()
+    axes.plot(x,force_array)
+    plt.xlabel('iteration')
+    plt.ylabel('Force (N)')
+    plt.title(str)
+    plt.savefig(f"/home/is420/MEng_project_controlled/forces/{str}_sub-iter_{sub_iter}.png")
     plt.close('all')
     
 def main():
@@ -354,15 +386,21 @@ def main():
     u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (double)
     force_func_max = 2
     force_func_min = 0
+    # force constraints
+    Force_3_min = -100000
+    Force_3_max = -1
+    
+    Force_4_min = 1
+    Force_4_max = 100000
     # ------------------------------
 
-    cl = [Volume_Lower,phi_min,u_min,force_func_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min,Force_3_min,Force_4_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
     for i in range(1,5):
-        cu = [Volume_Upper,phi_max,u_max,force_func_max] #Update the constraints 
+        cu = [Volume_Upper,phi_max,u_max,force_func_max,Force_3_max,Force_4_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
         # Setup problem
@@ -378,7 +416,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 150 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 140 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -432,6 +470,10 @@ def main():
         
         # plot functions
         function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
+        
+        # plot forces
+        force_history(obj.upper_force,"Upper Force",i)
+        force_history(obj.lower_force,"Lower Force",i)
 
 if __name__ == '__main__':
     main()
