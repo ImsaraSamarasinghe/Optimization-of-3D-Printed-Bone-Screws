@@ -29,7 +29,14 @@ cd PNG_rho
 rm *.pvd
 rm *.vtu
 
-# change to main running dir
+# move to forces file
+cd ..
+cd forces
+
+# delete all png in forces file
+rm *.png
+
+# come back to main dir
 cd ..
 
 # run the code
