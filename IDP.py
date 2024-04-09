@@ -47,6 +47,8 @@ class cantilever:
         self.u_constraint = []
         # --- Lists for storing objective history ---
         self.objective_history = []
+        # --- Store rho ----
+        self.rho_file = File(f"/home/is420/MEng_project_controlled/PNG_rho/rho_iter_{self.iter}.pvd")
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -111,6 +113,7 @@ class cantilever:
     # Function for the creation of the objective function
     def objective(self,x):
         self.rho.vector()[:] = x # Assign new densities to rho
+        self.rho_file.write(self.rho) # write to rho_file
         self.HH_filter() # filter densities
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
