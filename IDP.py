@@ -387,11 +387,11 @@ def main():
     force_func_max = 2
     force_func_min = 0
     # force constraints
-    Force_3_min = -100000
+    Force_3_min = -1
     Force_3_max = -1
     
     Force_4_min = 1
-    Force_4_max = 100000
+    Force_4_max = 1
     # ------------------------------
 
     cl = [Volume_Lower,phi_min,u_min,force_func_min,Force_3_min,Force_4_min] # lower bound of the constraints
