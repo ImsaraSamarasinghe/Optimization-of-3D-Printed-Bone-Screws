@@ -410,7 +410,7 @@ def main():
         
         # write png files
         fig, axes = plt.subplots()
-        collection = tripcolor(rho, axes=axes, cmap='viridis')
+        collection = tripcolor(rho_init, axes=axes, cmap='viridis')
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
         plt.title(f"sub_iteration: {i}")
@@ -429,6 +429,10 @@ def main():
         
         # plot functions
         function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
+
+        # save the rho file to init_rho
+        array_file = f"/home/is420/MEng_project_controlled/init_rho/rho.npy"
+        np.save(array_file,rho_init.dat.data)
 
 if __name__ == '__main__':
     main()
