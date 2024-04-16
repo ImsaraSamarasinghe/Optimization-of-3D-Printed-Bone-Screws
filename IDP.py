@@ -358,7 +358,7 @@ def main():
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,5):
+    for i in range(1,2):
         cu = [Volume_Upper,phi_max,u_max,force_func_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
