@@ -45,6 +45,9 @@ class cantilever:
         self.IDP_constraint = []
         self.Volume_constraint = []
         self.u_constraint = []
+        self.uf_constraint = []
+        self.lf_constraint = []
+        self.eq_constraint = []
         # --- Lists for storing objective history ---
         self.objective_history = []
         # --- Store rho ----
@@ -103,18 +106,21 @@ class cantilever:
         self.png_count = self.png_count + 1
         plt.close('all')
     ####
-    def rec_constraints(self,vol,IDP,u,func):
+    def rec_constraints(self,vol,IDP,u,func,uf,lf,equillibrium):
         self.function_constraint.append(func)
         self.IDP_constraint.append(IDP)
         self.Volume_constraint.append(vol)
         self.u_constraint.append(u)
+        self.uf_constraint.append(uf)
+        self.lf_constraint.append(lf)
+        self.eq_constraint.append(equillibrium)
     
     def rec_objective(self,J):
         self.objective_history.append(J)
     
-    def rec_forces(self,upper,lower):
-        self.upper_force.append(upper)
-        self.lower_force.append(lower)
+    def rec_forces(self,s):
+        self.upper_force.append(assemble(s[1,1]*ds(4)))
+        self.lower_force.append(assemble(s[1,1]*ds(3)))
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -137,6 +143,7 @@ class cantilever:
         J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
         
         self.rec_objective(J)
+        self.rec_forces(s)
         
         return J
         
@@ -182,16 +189,18 @@ class cantilever:
         # Forcing Function
         self.function()
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
-        
-        self.rec_constraints(Volume,IDP,mag,mag2)
-        
+                
         # expansion forces
-        s = self.sigma(self.uh) # stress Tensor
-        Force_3 = assemble(s[1,1]*ds(3)) # sigma_yy over boundary 3 -> Force_yy
-        Force_4 = assemble(s[1,1]*ds(4)) # sigma_yy over boundary 4 -> Force_xx
-        self.rec_forces(Force_4,Force_3) # record forces
+        # force constraint 1
+        s = self.sigma(self.uh)
+        upper_force_constraint = assemble(s[1,1]*ds(4))
+        lower_force_constraint = assemble(s[1,1]*ds(3))
+        equillibrium_constraint = assemble(s[1,1]*ds(4)+s[1,1]*ds(3))
+
+        self.rec_constraints(Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
+
         
-        return np.array((Volume,IDP,mag,mag2,Force_3,Force_4))
+        return np.array((Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint))
     
     
     # function to find jacobian
@@ -221,13 +230,15 @@ class cantilever:
         jac4 = compute_gradient(mag2,c)
         
         # expansion forces - gradients
-        s = self.sigma(self.uh) # stress Tensor
-        Force_3 = assemble(s[1,1]*ds(3)) # sigma_yy over boundary 3 -> Force_yy
-        Force_4 = assemble(s[1,1]*ds(4)) # sigma_yy over boundary 4 -> Force_xx
-        Force_3_jac = compute_gradient(Force_3,c)
-        Force_4_jac = compute_gradient(Force_4,c)
+        s = self.sigma(self.uh)
+        upper_force_constraint = assemble(s[1,1]*ds(4))
+        lower_force_constraint = assemble(s[1,1]*ds(3))
+        equillibrium_constraint = assemble(s[1,1]*ds(4)+s[1,1]*ds(3))
+        jac5 = compute_gradient(upper_force_constraint,c)
+        jac6 = compute_gradient(lower_force_constraint,c)
+        jac7 = compute_gradient(equillibrium_constraint,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,Force_3_jac.dat.data,Force_4_jac.dat.data))
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data))
 
 def constraint_history(constraint,str,sub_iter):
     x = []
@@ -383,24 +394,26 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (double)
-    force_func_max = 2
-    force_func_min = 0
+    u_max = 20*6.477e-9 # Value seen with full titanium block pulled out. (double)
+    force_func_max = 1
+    force_func_min = -1
     # force constraints
-    Force_3_min = -1
-    Force_3_max = -1
-    
-    Force_4_min = 1
-    Force_4_max = 1
+    # Both force constraints together
+    upper_force_min = 200
+    upper_force_max = 10000
+    lower_force_min = -10000
+    lower_force_max = -200
+    equillibrium_min = -1
+    equillibrium_max = 1
     # ------------------------------
 
-    cl = [Volume_Lower,phi_min,u_min,force_func_min,Force_3_min,Force_4_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,5):
-        cu = [Volume_Upper,phi_max,u_max,force_func_max,Force_3_max,Force_4_max] #Update the constraints 
+    for i in range(1,2): # set for only sub-iteration
+        cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
         # Setup problem
@@ -416,7 +429,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 140 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150
+            max_iter = 138 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -464,6 +477,9 @@ def main():
         constraint_history(obj.IDP_constraint,"IDP_constraint",i)
         constraint_history(obj.Volume_constraint,"Volume_constraint",i)
         constraint_history(obj.u_constraint,"u_constraint",i)
+        constraint_history(obj.uf_constraint,"Upper_Force_Constraint",i)
+        constraint_history(obj.lf_constraint,"Lower_Force_Constraint",i)
+        constraint_history(obj.eq_constraint,"Equillibrium_Constraint",i)
         
         # create plot of the objective
         constraint_history(obj.objective_history,"Objective_History",i)
@@ -474,6 +490,12 @@ def main():
         # plot forces
         force_history(obj.upper_force,"Upper Force",i)
         force_history(obj.lower_force,"Lower Force",i)
+        
+        # ----- Final boundary Forces ----
+        print(f"##################################")
+        print(f"Upper force: {obj.upper_force[-1]}")
+        print(f"Lower force: {obj.lower_force[-1]}")
+        print(f"##################################")
 
 if __name__ == '__main__':
     main()
