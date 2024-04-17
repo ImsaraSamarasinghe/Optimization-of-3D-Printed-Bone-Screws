@@ -196,14 +196,11 @@ class cantilever:
         upper_force_constraint = assemble(s[1,1]*ds(4))
         lower_force_constraint = assemble(s[1,1]*ds(3))
         equillibrium_constraint = assemble(s[1,1]*ds(4)+s[1,1]*ds(3))
-        # added constraints for forces on the left hand boundary
-        left_force_constraint = assemble(s[0,0]*ds(1))
-        left_force_equillibrium = assemble(s[0,0]*ds(1)+s[0,0]*ds(2))
-
+        
         self.rec_constraints(Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
 
         
-        return np.array((Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint,left_force_constraint,left_force_equillibrium))
+        return np.array((Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint))
     
     
     # function to find jacobian
@@ -237,18 +234,12 @@ class cantilever:
         upper_force_constraint = assemble(s[1,1]*ds(4))
         lower_force_constraint = assemble(s[1,1]*ds(3))
         equillibrium_constraint = assemble(s[1,1]*ds(4)+s[1,1]*ds(3))
-        # added constraints for forces on the left hand boundary
-        left_force_constraint = assemble(s[0,0]*ds(1))
-        left_force_equillibrium = assemble(s[0,0]*ds(1)+s[0,0]*ds(2))
-
+        
         jac5 = compute_gradient(upper_force_constraint,c)
         jac6 = compute_gradient(lower_force_constraint,c)
         jac7 = compute_gradient(equillibrium_constraint,c)
-        # jacobians for the left hand side constraints
-        jac8 = compute_gradient(left_force_constraint,c)
-        jac9 = compute_gradient(left_force_equillibrium,c)
         
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data,jac8.dat.data,jac9.dat.data))
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data))
 
 def constraint_history(constraint,str,sub_iter):
     x = []
@@ -308,7 +299,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 5*L/nx
+    r_min = 2*L/nx
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -416,21 +407,15 @@ def main():
     lower_force_max = -200
     equillibrium_min = -1
     equillibrium_max = 1
-
-    # --- LHS BOUNDARY ----
-    left_force_min = -10000
-    left_force_max = -200
-    left_equillibrium_min = -1
-    left_equillibrium_max = 1
     # ------------------------------
 
-    cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,left_force_min,left_equillibrium_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
     for i in range(1,3): # set for only sub-iteration
-        cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max,left_force_max,left_equillibrium_max] #Update the constraints 
+        cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
         # Setup problem
