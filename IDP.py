@@ -72,7 +72,7 @@ class cantilever:
     
     def forward(self):
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equation
-        self.lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
+        self.lambda_ = E*self.nu/((1+self.nu)*(1-2*self.nu))
         self.mu = E/(2*(1+self.nu))
         a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
         l = inner(self.t,self.v)*ds(2)
@@ -375,7 +375,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 150 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 130 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
