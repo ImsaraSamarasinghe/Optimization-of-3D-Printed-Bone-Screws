@@ -235,7 +235,7 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size
-    nx, ny = 150, 60 # mesh size
+    nx, ny = 180, 90 # mesh size
     VolFrac = 0.4*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties # code tested at 1 kinda worked # new youngs modulus titanium alloy 
     p, E_min = 3.0, 1e-3 # SIMP Values
@@ -252,7 +252,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 0.08
+    r_min = 1.5*L/nx
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -375,7 +375,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 130 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 70 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160;; 130
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
