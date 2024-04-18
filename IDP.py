@@ -75,7 +75,7 @@ class cantilever:
     
     def forward(self):
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equationclear
-        self.lambda_ = E*self.nu/((1-self.nu)*(1-2*self.nu))
+        self.lambda_ = E*self.nu/((1+self.nu)*(1-2*self.nu))
         self.mu = E/(2*(1+self.nu))
         a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
         l = inner(self.t,self.v)*ds(2)
@@ -119,13 +119,7 @@ class cantilever:
         self.rec_stress()
         # Find the new objective
         s = self.sigma(self.uh)
-        Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
-        area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
-        avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = 0.8 * assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3)) + 0.2 * assemble((s[0,1]/self.max_shear)**self.p_norm*dx)**(1/self.p_norm)
+        J = assemble((s[0,1]/self.max_shear)**self.p_norm*dx)**(1/self.p_norm)
 
         self.objective_history.append(J)
         return J
@@ -139,13 +133,7 @@ class cantilever:
         
         # --- find gradient ------
         s = self.sigma(self.uh)
-        Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
-        area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
-        avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = 0.8 * assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3)) + 0.2 * assemble((s[0,1]/self.max_shear)**self.p_norm*dx)**(1/self.p_norm)
+        J = assemble((s[0,1]/self.max_shear)**self.p_norm*dx)**(1/self.p_norm)
         
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
@@ -172,6 +160,12 @@ class cantilever:
         # Forcing Function
         self.function()
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+
+        # top boundary force condition
+        s = self.sigma(self.uh)
+        top_boundary_force = assemble(s[1,1]*ds(4))
+        # bottom boundary force condition
+        bottom_boundary_force = assemble(s[1,1]*ds(3))
         
         self.rec_constraints(Volume,IDP,mag,mag2)
         
@@ -203,8 +197,16 @@ class cantilever:
         self.function()
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
         jac4 = compute_gradient(mag2,c)
-        
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data))
+
+        # top boundary force condition
+        s = self.sigma(self.uh)
+        top_boundary_force = assemble(s[1,1]*ds(4))
+        jac5 = compute_gradient(top_boundary_force,c)
+        # bottom boundary force condition
+        bottom_boundary_force = assemble(s[1,1]*ds(3))
+        jac6 = compute_gradient(bottom_boundary_force,c)
+
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data))
 
 def constraint_history(constraint,str,sub_iter):
     x = []
@@ -351,15 +353,19 @@ def main():
     u_max = 10*6.35e-9 # Value seen with full titanium block pulled out. (double)
     force_func_max = 1
     force_func_min = 0
+    top_force_min = 200
+    top_force_max = 10000
+    bottom_force_min = -10000
+    bottom_force_max = -200
     # ------------------------------
 
-    cl = [Volume_Lower,phi_min,u_min,force_func_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min,top_force_min,bottom_force_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
     for i in range(1,5):
-        cu = [Volume_Upper,phi_max,u_max,force_func_max] #Update the constraints 
+        cu = [Volume_Upper,phi_max,u_max,force_func_max,top_force_max,bottom_force_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
         # Setup problem
