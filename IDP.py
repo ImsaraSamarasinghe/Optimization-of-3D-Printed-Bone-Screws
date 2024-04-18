@@ -282,7 +282,7 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size
-    nx, ny = 150, 60 # mesh size
+    nx, ny = 180, 90 # mesh size 150, 60
     VolFrac = 0.4*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
@@ -299,7 +299,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 2*L/nx
+    r_min = 1.5*L/nx
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -396,7 +396,7 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (double)
+    u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (multiplied)
     force_func_max = 1
     force_func_min = -1
     # force constraints
@@ -431,7 +431,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 138 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140
+            max_iter = 84 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
