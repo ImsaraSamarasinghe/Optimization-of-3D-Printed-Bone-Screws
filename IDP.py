@@ -45,9 +45,9 @@ class cantilever:
         self.IDP_constraint = []
         self.Volume_constraint = []
         self.u_constraint = []
-        self.uf_constraint = []
-        self.lf_constraint = []
-        self.eq_constraint = []
+        self.uf_constraint = [] # upper force constraint history
+        self.lf_constraint = [] # lower force constraint history
+        self.eq_constraint = [] # equillibrium constraint history
         # --- Lists for storing objective history ---
         self.objective_history = []
         # --- Store rho ----
@@ -396,7 +396,7 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 8*6.477e-9 # Value seen with full titanium block pulled out. (multiplied)
+    u_max = 18*6.477e-9 # Value seen with full titanium block pulled out. (multiplied)
     force_func_max = 1
     force_func_min = -1
     # force constraints
@@ -431,7 +431,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 84 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138
+            max_iter = 110 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -464,7 +464,7 @@ def main():
         filename = f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.pvd"
         File(filename).write(rho_init)
         
-        # write png files
+        # write png files of final rho distribution
         fig, axes = plt.subplots()
         collection = tripcolor(rho, axes=axes, cmap='viridis')
         colorbar = fig.colorbar(collection);
