@@ -10,7 +10,7 @@ continue_annotation() # start tape
 
 # ------- setup class --------
 class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,iter): # create class variables
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,iter,mesh): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -55,6 +55,11 @@ class cantilever:
         # ---- store force histories ----
         self.upper_force = []
         self.lower_force = []
+        # ---  mesh --- 
+        self.mesh = mesh
+        # --- Facet Normals ---
+        self.n = FacetNormal(self.mesh)
+        # --- Voight space and Functions ---
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -91,6 +96,11 @@ class cantilever:
     def function(self):
         self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
     
+    # function to fill in the voight stress vector
+    def voigt_vector(self):
+        s = self.sigma(self.uh)
+        return as_vector([s[0,0],s[1,1]])
+
     ####
     def rec_stress(self):
         s = self.sigma(self.uh)
@@ -192,10 +202,10 @@ class cantilever:
                 
         # expansion forces
         # force constraint 1
-        s = self.sigma(self.uh)
-        upper_force_constraint = assemble(s[1,1]*ds(4))
-        lower_force_constraint = assemble(s[1,1]*ds(3))
-        equillibrium_constraint = assemble(s[1,1]*ds(4)+s[1,1]*ds(3))
+        voigt_stress = self.voigt_vector()
+        upper_force_constraint = assemble(dot(voigt_stress,self.n)*ds(4))
+        lower_force_constraint = assemble(dot(voigt_stress,self.n)*ds(3))
+        equillibrium_constraint = assemble(dot(voigt_stress,self.n)*ds(4)-dot(voigt_stress,self.n)*ds(3))
         
         self.rec_constraints(Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
 
@@ -230,10 +240,10 @@ class cantilever:
         jac4 = compute_gradient(mag2,c)
         
         # expansion forces - gradients
-        s = self.sigma(self.uh)
-        upper_force_constraint = assemble(s[1,1]*ds(4))
-        lower_force_constraint = assemble(s[1,1]*ds(3))
-        equillibrium_constraint = assemble(s[1,1]*ds(4)+s[1,1]*ds(3))
+        voigt_stress = self.voigt_vector()
+        upper_force_constraint = assemble(dot(voigt_stress,self.n)*ds(4))
+        lower_force_constraint = assemble(dot(voigt_stress,self.n)*ds(3))
+        equillibrium_constraint = assemble(dot(voigt_stress,self.n)*ds(4)-dot(voigt_stress,self.n)*ds(3))
         
         jac5 = compute_gradient(upper_force_constraint,c)
         jac6 = compute_gradient(lower_force_constraint,c)
@@ -281,7 +291,7 @@ def main():
     # Times
     t1 = 0
     # ------ problem parameters ------------
-    L, W = 5.0, 1.0 # domain size
+    L, W = 5.0, 1.0 # domain size # original 5.0,1.0
     nx, ny = 180, 90 # mesh size 150, 60
     VolFrac = 0.4*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
@@ -383,7 +393,6 @@ def main():
         HH_filter()
 
     # ------ create optimiser -----
-    # rho_init.vector()[:] = np.load(f"/home/is420/MEng_project_controlled/init_rho/rho.npy") # Assign starting initialisation for the rho field = 0.5
     rho_init.vector()[:] = 0.5
     function_plot(rho_init,"initialisation_rho_","inital") # plot the initialised rho domain
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
@@ -396,15 +405,15 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 18*6.477e-9 # Value seen with full titanium block pulled out. (multiplied)
+    u_max = 20*1.5371025135048747e-08# Value seen with full titanium block pulled out. (multiplied)
     force_func_max = 1
     force_func_min = -1
     # force constraints
     # Both force constraints together
     upper_force_min = 200
     upper_force_max = 10000
-    lower_force_min = -10000
-    lower_force_max = -200
+    lower_force_min = 200
+    lower_force_max = 10000
     equillibrium_min = -1
     equillibrium_max = 1
     # ------------------------------
@@ -414,9 +423,9 @@ def main():
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,3): # set for only sub-iteration
+    for i in range(1,2): # set for only sub-iteration
         cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
+        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -431,7 +440,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 110 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
+            max_iter = 95 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
