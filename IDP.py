@@ -405,7 +405,7 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 20*1.5371025135048747e-08# Value seen with full titanium block pulled out. (multiplied)
+    u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
     force_func_max = 1
     force_func_min = -1
     # force constraints
