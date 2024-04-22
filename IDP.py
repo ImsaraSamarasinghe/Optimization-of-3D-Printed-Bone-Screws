@@ -4,8 +4,7 @@ from firedrake.adjoint import *
 import cyipopt
 import numpy as np
 import matplotlib.pyplot as plt
-import random
-import noise
+import pickle
 continue_annotation() # start tape
 
 # ------- setup class --------
@@ -34,7 +33,6 @@ class cantilever:
         self.mu = None
         self.STRESS = STRESS
         self.x=x # x coordinates for the forcing function
-        self.ForcingFunction=0
         self.iter = iter # iteration count
         self.d_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh_iter_{self.iter}.pvd")
         self.s_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/stress_folder/stresses_iter.pvd")
@@ -59,7 +57,9 @@ class cantilever:
         self.mesh = mesh
         # --- Facet Normals ---
         self.n = FacetNormal(self.mesh)
-        # --- Voight space and Functions ---
+        # --- Forcing Function ----
+        self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
+
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -74,9 +74,6 @@ class cantilever:
 
     def epsilon(self,u): # Strain Tensor
         return 0.5 * (grad(u) + grad(u).T)
-        
-    def get_IDP(self): # function to access IDP outside the class
-        return self.IDP
     
     def tanh_filter(self,eta): # Projection filter
         numerator = tanh(self.beta * eta) + tanh(self.beta * (self.rho_filt - eta))
@@ -92,9 +89,6 @@ class cantilever:
         forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])
         forward_solver = LinearVariationalSolver(forward_problem)
         forward_solver.solve()
-    
-    def function(self):
-        self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
     
     # function to fill in the voight stress vector
     def voigt_vector(self):
@@ -127,10 +121,12 @@ class cantilever:
     
     def rec_objective(self,J):
         self.objective_history.append(J)
+        # create pickle here
     
     def rec_forces(self,s):
         self.upper_force.append(assemble(s[1,1]*ds(4)))
         self.lower_force.append(assemble(s[1,1]*ds(3)))
+        # create pickle here
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -197,7 +193,6 @@ class cantilever:
         mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
         
         # Forcing Function
-        self.function()
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
                 
         # expansion forces
@@ -235,7 +230,6 @@ class cantilever:
         jac3 = compute_gradient(mag,c)
         
         # gradient of the forcing function
-        self.function()
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
         jac4 = compute_gradient(mag2,c)
         
