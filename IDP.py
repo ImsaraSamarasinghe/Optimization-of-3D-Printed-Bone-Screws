@@ -4,8 +4,7 @@ from firedrake.adjoint import *
 import cyipopt
 import numpy as np
 import matplotlib.pyplot as plt
-import random
-import noise
+import pickle
 continue_annotation() # start tape
 
 # ------- setup class --------
@@ -102,9 +101,15 @@ class screw3D:
     
     def rec_objective(self,J):
         self.objective_history.append(J)
+        # pickle list
+        with open('PickleFiles/objective.pkl', 'wb') as f:
+            pickle.dump(self.objective_history, f)
     
     def rec_forces(self,force):
         self.expansion_force.append(force)
+        # pickle list
+        with open('PickleFiles/radial_force.pkl','wb') as f:
+            pickle.dump(self.expansion_force, f)
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -211,40 +216,6 @@ class screw3D:
         jac5 = compute_gradient(force_constraint,c)
         
         return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data))
-
-def constraint_history(constraint,str,sub_iter):
-    x = []
-    for i in range(1,len(constraint)+1):
-        x.append(i)
-    fig, axes = plt.subplots()
-    axes.plot(x,constraint)
-    plt.xlabel('iteration')
-    plt.ylabel('value')
-    plt.title(str)
-    plt.savefig(f"/home/is420/MEng_project_controlled/constraint_history/{str}_sub-iter_{sub_iter}.png")
-    plt.close('all')
-
-def function_plot(function,str,sub_iter):
-    fig, axes = plt.subplots()
-    collection = tripcolor(function, axes=axes, cmap='viridis')
-    colorbar = fig.colorbar(collection);
-    colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
-    plt.title(f"sub_iteration: {sub_iter}")
-    plt.gca().set_aspect(1)
-    plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/{str}_sub-iter{sub_iter}.png")
-    plt.close('all')
-
-def force_history(force_array,str,sub_iter):
-    x = []
-    for i in range(1,len(force_array)+1):
-        x.append(i)
-    fig, axes = plt.subplots()
-    axes.plot(x,force_array)
-    plt.xlabel('iteration')
-    plt.ylabel('Force (N)')
-    plt.title(str)
-    plt.savefig(f"/home/is420/MEng_project_controlled/forces/{str}_sub-iter_{sub_iter}.png")
-    plt.close('all')
     
 def main():
     # plotting settings
@@ -390,7 +361,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 95 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
+            max_iter = 95 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84;; 95
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -418,23 +389,6 @@ def main():
             
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
-        
-        # create plots for the constraints
-        constraint_history(obj.function_constraint,"function_constraint",i)
-        constraint_history(obj.IDP_constraint,"IDP_constraint",i)
-        constraint_history(obj.Volume_constraint,"Volume_constraint",i)
-        constraint_history(obj.u_constraint,"u_constraint",i)
-        
-        # create plot of the objective
-        constraint_history(obj.objective_history,"Objective_History",i)
-                
-        # plot forces
-        force_history(obj.expansion_force,"Radial Force",i)
-    
-        # ----- Final boundary Forces ----
-        print(f"##################################")
-        print(f"Radial force: {obj.expansion_force[-1]}")
-        print(f"##################################")
 
 if __name__ == '__main__':
     main()
