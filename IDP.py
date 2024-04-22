@@ -9,8 +9,8 @@ import noise
 continue_annotation() # start tape
 
 # ------- setup class --------
-class cantilever:
-    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,iter,mesh): # create class variables
+class screw3D:
+    def __init__(self,E_max,nu,p,E_min,t,BC1,BC2,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,z,iter,mesh): # create class variables
         self.E_max = E_max
         self.nu = nu
         self.p = p
@@ -18,7 +18,6 @@ class cantilever:
         self.t = t
         self.BC1 = BC1
         self.BC2 = BC2
-        self.BC3 = BC3
         self.v = v
         self.u = u
         self.uh = uh
@@ -33,8 +32,7 @@ class cantilever:
         self.lambda_ = None
         self.mu = None
         self.STRESS = STRESS
-        self.x=x # x coordinates for the forcing function
-        self.ForcingFunction=0
+        self.z=z # x coordinates for the forcing function
         self.iter = iter # iteration count
         self.d_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh_iter_{self.iter}.pvd")
         self.s_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/stress_folder/stresses_iter.pvd")
@@ -45,32 +43,29 @@ class cantilever:
         self.IDP_constraint = []
         self.Volume_constraint = []
         self.u_constraint = []
-        self.uf_constraint = [] # upper force constraint history
-        self.lf_constraint = [] # lower force constraint history
-        self.eq_constraint = [] # equillibrium constraint history
         # --- Lists for storing objective history ---
         self.objective_history = []
         # --- Store rho ----
         self.rho_file = File(f"/home/is420/MEng_project_controlled/PNG_rho/rho_iter_{self.iter}.pvd")
-        # ---- store force histories ----
-        self.upper_force = []
-        self.lower_force = []
+        # ---- store force history ----
+        self.expansion_force = []
         # ---  mesh --- 
         self.mesh = mesh
         # --- Facet Normals ---
         self.n = FacetNormal(self.mesh)
-        # --- Voight space and Functions ---
+        # --- Forcing Function ---
+        self.ForcingFunction = project((tanh(asin(sin(15*self.z))*100)+1)/2,self.RHO) # Added a forcing function for edges.
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
         rhof, w = TrialFunction(self.RHO), TestFunction(self.RHO)
-        A = (self.r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
-        L = self.rho*w*dx
+        A = (self.r_min**2)*inner(grad(rhof), grad(w))*dx(2)+rhof*w*dx(2)
+        L = self.rho*w*dx(2)
         bc = []
         solve(A==L, self.rho_filt, bcs=bc)
 
     def sigma(self,u): # stress Tensor
-        return self.lambda_ * div(u) * Identity(2) + 2 * self.mu * self.epsilon(u)
+        return self.lambda_ * div(u) * Identity(3) + 2 * self.mu * self.epsilon(u)
 
     def epsilon(self,u): # Strain Tensor
         return 0.5 * (grad(u) + grad(u).T)
@@ -87,50 +82,29 @@ class cantilever:
         E = self.E_min + (self.E_max - self.E_min)*self.rho_filt2**self.p # SIMP Equation
         self.lambda_ = E*self.nu/((1+self.nu)*(1-2*self.nu))
         self.mu = E/(2*(1+self.nu))
-        a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
-        l = inner(self.t,self.v)*ds(2)
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])
+        a = inner(self.sigma(self.u),self.epsilon(self.v))*dx(2)
+        l = inner(self.t,self.v)*ds(4)
+        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2])
         forward_solver = LinearVariationalSolver(forward_problem)
         forward_solver.solve()
-    
-    def function(self):
-        self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
     
     # function to fill in the voight stress vector
     def voigt_vector(self):
         s = self.sigma(self.uh)
-        return as_vector([s[0,0],s[1,1]])
-
-    ####
-    def rec_stress(self):
-        s = self.sigma(self.uh)
-        shear = s[0,1]
-        ss = project(shear,self.STRESS)
-        
-        fig, axes = plt.subplots()
-        collection = tripcolor(ss, axes=axes, cmap='viridis')
-        colorbar = fig.colorbar(collection);
-        colorbar.set_label(r'$\sigma_{xy}$',fontsize=14,rotation=90)
-        plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/PNG_shear/shear_{self.png_count}_{self.iter}.png")
-        self.png_count = self.png_count + 1
-        plt.close('all')
-    ####
-    def rec_constraints(self,vol,IDP,u,func,uf,lf,equillibrium):
+        return as_vector([s[0,0],s[1,1],s[2,2]])
+    
+    # function to record constraints
+    def rec_constraints(self,vol,IDP,u,func):
         self.function_constraint.append(func)
         self.IDP_constraint.append(IDP)
         self.Volume_constraint.append(vol)
         self.u_constraint.append(u)
-        self.uf_constraint.append(uf)
-        self.lf_constraint.append(lf)
-        self.eq_constraint.append(equillibrium)
     
     def rec_objective(self,J):
         self.objective_history.append(J)
     
-    def rec_forces(self,s):
-        self.upper_force.append(assemble(s[1,1]*ds(4)))
-        self.lower_force.append(assemble(s[1,1]*ds(3)))
+    def rec_forces(self,force):
+        self.expansion_force.append(force)
     #------ end of class attributes for computations -----------
 
     # Function for the creation of the objective function
@@ -141,19 +115,17 @@ class cantilever:
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
         self.d_file.write(self.uh) # write displacement to file
-        self.rec_stress()
-        # Find the new objective
-        s = self.sigma(self.uh)
-        Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
-        area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
-        avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        # self.rec_stress() # removed does not work in 3D
+
+        # ---- Find the new objective ----
+        area = assemble(self.find_area*ds(6)) # find the area of the Wall
+        s = self.sigma(self.uh) # stress tensor
+        Force_xy = assemble(s[0,1]*ds(6))
+        Force_xz = assemble(s[0,2]*ds(6))
+        Force_yz = assemble(s[1,2]*ds(6))
+        J = assemble((s[0,1]-Force_xy/area)**2*ds(6) + (s[0,2]-Force_xz/area)**2*ds(6) + (s[1,2]-Force_yz/area)**2*ds(6))
         
-        self.rec_objective(J)
-        self.rec_forces(s)
+        self.rec_objective(J) # record objective
         
         return J
         
@@ -165,14 +137,12 @@ class cantilever:
         self.forward() # forward problem
         
         # --- find gradient ------
-        s = self.sigma(self.uh)
-        Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
-        area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
-        avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        area = assemble(self.find_area*ds(6)) # find the area of the Wall
+        s = self.sigma(self.uh) # stress tensor
+        Force_xy = assemble(s[0,1]*ds(6))
+        Force_xz = assemble(s[0,2]*ds(6))
+        Force_yz = assemble(s[1,2]*ds(6))
+        J = assemble((s[0,1]-Force_xy/area)**2*ds(6) + (s[0,2]-Force_xz/area)**2*ds(6) + (s[1,2]-Force_yz/area)**2*ds(6))
         
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
@@ -187,30 +157,27 @@ class cantilever:
         self.tanh_filter(0.5)
         
         # Volume Constraint
-        Volume = assemble(self.rho_filt2*dx)
+        Volume = assemble(self.rho_filt2*dx(2))
         
         # Intermediate Density Penalisation
-        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
+        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx(2))
         
         # Magnitude constraint on the RHS boundary
         self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(4))
         
         # Forcing Function
-        self.function()
-        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(6))
                 
         # expansion forces
         # force constraint 1
         voigt_stress = self.voigt_vector()
-        upper_force_constraint = assemble(dot(voigt_stress,self.n)*ds(4))
-        lower_force_constraint = assemble(dot(voigt_stress,self.n)*ds(3))
-        equillibrium_constraint = assemble(dot(voigt_stress,self.n)*ds(4)-dot(voigt_stress,self.n)*ds(3))
-        
-        self.rec_constraints(Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
+        force_constraint = assemble(dot(voigt_stress,self.n)*ds(6)) # radial force
 
+        self.rec_forces(force_constraint) # record radial force
+        self.rec_constraints(Volume,IDP,mag,mag2) # record all constraints for history
         
-        return np.array((Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint))
+        return np.array((Volume,IDP,mag,mag2,force_constraint))
     
     
     # function to find jacobian
@@ -221,35 +188,29 @@ class cantilever:
         self.tanh_filter(0.5)
         
         # gradient of the colume constraint
-        Volume = assemble(self.rho_filt2*dx)
+        Volume = assemble(self.rho_filt2*dx(2))
         c = Control(self.rho)
         jac1 = compute_gradient(Volume,c)
         
         # gradient of the IDP Function
-        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
+        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx(2))
         jac2 = compute_gradient(IDP,c)
         
         # gradient of the magnitude on the RHS boundary
         self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(4))
         jac3 = compute_gradient(mag,c)
         
         # gradient of the forcing function
-        self.function()
-        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(6))
         jac4 = compute_gradient(mag2,c)
         
-        # expansion forces - gradients
+        # expansion force - gradient
         voigt_stress = self.voigt_vector()
-        upper_force_constraint = assemble(dot(voigt_stress,self.n)*ds(4))
-        lower_force_constraint = assemble(dot(voigt_stress,self.n)*ds(3))
-        equillibrium_constraint = assemble(dot(voigt_stress,self.n)*ds(4)-dot(voigt_stress,self.n)*ds(3))
+        force_constraint = assemble(dot(voigt_stress,self.n)*ds(6))
+        jac5 = compute_gradient(force_constraint,c)
         
-        jac5 = compute_gradient(upper_force_constraint,c)
-        jac6 = compute_gradient(lower_force_constraint,c)
-        jac7 = compute_gradient(equillibrium_constraint,c)
-        
-        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data))
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data))
 
 def constraint_history(constraint,str,sub_iter):
     x = []
@@ -290,28 +251,19 @@ def main():
     plt.style.use("default")
     # Times
     t1 = 0
-    # ------ problem parameters ------------
-    L, W = 5.0, 1.0 # domain size # original 5.0,1.0
-    nx, ny = 180, 90 # mesh size 150, 60
-    VolFrac = 0.4*L*W # Volume Fraction
-    E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
-    p, E_min = 3.0, 1e-3 # SIMP Values
-    t = Constant([2000,0]) # load # t = 2000
-
-    # ----- setup BC, mesh, and function spaces ----
-    mesh = RectangleMesh(nx,ny,L,W)
-    x, y = SpatialCoordinate(mesh)
-    V = VectorFunctionSpace(mesh,'CG',1)
-    RHO = FunctionSpace(mesh,'CG',1)
-    STRESS = FunctionSpace(mesh,'CG',1) ## stress function space
-    BC1 = DirichletBC(V,Constant([0,0]),1)
-    BC2 = DirichletBC(V,Constant([0,0]),3)
-    BC3 = DirichletBC(V,Constant([0,0]),4)
-    
-    # radius for hh HH_filter
-    r_min = 1.5*L/nx
-
-    # ------ setup functions -----
+    # ----- MESH & coordinates-------
+    mesh = Mesh('screw_less_fine.msh') # import mesh
+    x, y, z = SpatialCoordinate(mesh) # coordinate system
+    # ----- Function spaces -----
+    V = VectorFunctionSpace(mesh,'CG',1) # main function space (VECTOR)
+    RHO = FunctionSpace(mesh,'CG',1) # density varibales function space (SCALAR)
+    STRESS = FunctionSpace(mesh,'CG',1) # stress function space (SCALAR)
+    # ---- Dirichlet Boundary Conditions -----
+    BC1 = DirichletBC(V,Constant([0,0,0]),5) # End
+    BC2 = DirichletBC(V,Constant([0,0,0]),6) # Wall
+    # ---- Filter Radius -----
+    r_min = 1.5*5/164 # WILL NEED CHANGE
+    # ------ Functions -----
     v = TestFunction(V)
     u = TrialFunction(V)
     uh = Function(V)
@@ -319,8 +271,13 @@ def main():
     rho_init = Function(RHO)
     rho_temp = Function(RHO) # used for initiliase function
     rho_filt = Function(RHO)
-    find_area = Function(RHO).assign(Constant(1))
-    
+    find_area = Function(RHO).assign(Constant(1)) # function space used for evaluating areas and volumes
+    # ------ problem parameters ------------
+    VolFrac = assemble(0.4*find_area*dx(2)) # volume fraction
+    E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
+    p, E_min = 3.0, 1e-3 # SIMP Values
+    t = Constant([0,0,2000]) # load t=2000 in +z
+
     # --- Function for random intialisation ---
     def Initialise_rho():
         # Define the size and spacing of the diamonds
@@ -393,8 +350,7 @@ def main():
         HH_filter()
 
     # ------ create optimiser -----
-    rho_init.vector()[:] = 0.5
-    function_plot(rho_init,"initialisation_rho_","inital") # plot the initialised rho domain
+    rho_init.vector()[:] = 0.5 # initialise with 0.5
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
     lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
@@ -408,24 +364,18 @@ def main():
     u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
     force_func_max = 1
     force_func_min = -1
-    # force constraints
-    # Both force constraints together
-    upper_force_min = 200
-    upper_force_max = 10000
-    lower_force_min = 200
-    lower_force_max = 10000
-    equillibrium_min = -1
-    equillibrium_max = 1
-    # ------------------------------
+    # ----- Radial force constraints -----
+    radial_force_min = 200
+    radial_force_max = 10000
 
-    cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min,radial_force_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
     beta = 2 # value of beta
     
     # ------- solve with sub-iterations -------
     for i in range(1,2): # set for only sub-iteration
-        cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
+        cu = [Volume_Upper,phi_max,u_max,force_func_max,radial_force_max] #Update the constraints 
+        obj = screw3D(E_max,nu,p,E_min,t,BC1,BC2,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,z,i,mesh) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -469,43 +419,21 @@ def main():
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
         
-        # write new file with each iteration
-        filename = f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.pvd"
-        File(filename).write(rho_init)
-        
-        # write png files of final rho distribution
-        fig, axes = plt.subplots()
-        collection = tripcolor(rho, axes=axes, cmap='viridis')
-        colorbar = fig.colorbar(collection);
-        colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
-        plt.title(f"sub_iteration: {i}")
-        plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.png")
-        plt.close("all")
-        
         # create plots for the constraints
         constraint_history(obj.function_constraint,"function_constraint",i)
         constraint_history(obj.IDP_constraint,"IDP_constraint",i)
         constraint_history(obj.Volume_constraint,"Volume_constraint",i)
         constraint_history(obj.u_constraint,"u_constraint",i)
-        constraint_history(obj.uf_constraint,"Upper_Force_Constraint",i)
-        constraint_history(obj.lf_constraint,"Lower_Force_Constraint",i)
-        constraint_history(obj.eq_constraint,"Equillibrium_Constraint",i)
         
         # create plot of the objective
         constraint_history(obj.objective_history,"Objective_History",i)
-        
-        # plot functions
-        function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
-        
+                
         # plot forces
-        force_history(obj.upper_force,"Upper Force",i)
-        force_history(obj.lower_force,"Lower Force",i)
-        
+        force_history(obj.expansion_force,"Radial Force",i)
+    
         # ----- Final boundary Forces ----
         print(f"##################################")
-        print(f"Upper force: {obj.upper_force[-1]}")
-        print(f"Lower force: {obj.lower_force[-1]}")
+        print(f"Radial force: {obj.expansion_force[-1]}")
         print(f"##################################")
 
 if __name__ == '__main__':
