@@ -34,8 +34,7 @@ class cantilever:
         self.STRESS = STRESS
         self.x=x # x coordinates for the forcing function
         self.iter = iter # iteration count
-        self.d_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh_iter_{self.iter}.pvd")
-        self.s_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/stress_folder/stresses_iter.pvd")
+        self.d_file = File(f"newIDPresults/vtu/uh_iter_{self.iter}.pvd")
         self.rho_filt2 = Function(self.RHO) # new function to store after TANH filter
         self.png_count = 0
         # -- lists for storing constraints -- 
@@ -49,7 +48,7 @@ class cantilever:
         # --- Lists for storing objective history ---
         self.objective_history = []
         # --- Store rho ----
-        self.rho_file = File(f"/home/is420/MEng_project_controlled/PNG_rho/rho_iter_{self.iter}.pvd")
+        self.rho_file = File(f"PNG_rho/rho_iter_{self.iter}.pvd")
         # ---- store force histories ----
         self.upper_force = []
         self.lower_force = []
@@ -106,7 +105,7 @@ class cantilever:
         colorbar = fig.colorbar(collection);
         colorbar.set_label(r'$\sigma_{xy}$',fontsize=14,rotation=90)
         plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/PNG_shear/shear_{self.png_count}_{self.iter}.png")
+        plt.savefig(f"PNG_shear/shear_{self.png_count}_{self.iter}.png")
         self.png_count = self.png_count + 1
         plt.close('all')
     ####
@@ -118,14 +117,23 @@ class cantilever:
         self.uf_constraint.append(uf)
         self.lf_constraint.append(lf)
         self.eq_constraint.append(equillibrium)
+        # pickle lists
+        with open('PickleFiles/constraints.pkl','wb') as file:
+            pickle.dump((self.function_constraint,self.IDP_constraint,self.Volume_constraint
+                        ,self.u_constraint,self.uf_constraint,self.lf_constraint,self.eq_constraint),file)
     
     def rec_objective(self,J):
         self.objective_history.append(J)
         # create pickle here
+        with open('PickleFiles/objective.pkl','wb') as file:
+            pickle.dump(self.objective_history, file)
     
     def rec_forces(self,s):
         self.upper_force.append(assemble(s[1,1]*ds(4)))
         self.lower_force.append(assemble(s[1,1]*ds(3)))
+        # pickle lists
+        with open('PickleFiles/forces.pkl','wb') as file:
+            pickle.dump((self.upper_force, self.lower_force), file)
         # create pickle here
     #------ end of class attributes for computations -----------
 
@@ -203,7 +211,6 @@ class cantilever:
         equillibrium_constraint = assemble(dot(voigt_stress,self.n)*ds(4)-dot(voigt_stress,self.n)*ds(3))
         
         self.rec_constraints(Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
-
         
         return np.array((Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint))
     
@@ -245,17 +252,6 @@ class cantilever:
         
         return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data))
 
-def constraint_history(constraint,str,sub_iter):
-    x = []
-    for i in range(1,len(constraint)+1):
-        x.append(i)
-    fig, axes = plt.subplots()
-    axes.plot(x,constraint)
-    plt.xlabel('iteration')
-    plt.ylabel('value')
-    plt.title(str)
-    plt.savefig(f"/home/is420/MEng_project_controlled/constraint_history/{str}_sub-iter_{sub_iter}.png")
-    plt.close('all')
 
 def function_plot(function,str,sub_iter):
     fig, axes = plt.subplots()
@@ -264,20 +260,9 @@ def function_plot(function,str,sub_iter):
     colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
     plt.title(f"sub_iteration: {sub_iter}")
     plt.gca().set_aspect(1)
-    plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/{str}_sub-iter{sub_iter}.png")
+    plt.savefig(f"newIDPresults/{str}_sub-iter{sub_iter}.png")
     plt.close('all')
 
-def force_history(force_array,str,sub_iter):
-    x = []
-    for i in range(1,len(force_array)+1):
-        x.append(i)
-    fig, axes = plt.subplots()
-    axes.plot(x,force_array)
-    plt.xlabel('iteration')
-    plt.ylabel('Force (N)')
-    plt.title(str)
-    plt.savefig(f"/home/is420/MEng_project_controlled/forces/{str}_sub-iter_{sub_iter}.png")
-    plt.close('all')
     
 def main():
     # plotting settings
@@ -286,7 +271,7 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size # original 5.0,1.0
-    nx, ny = 180, 90 # mesh size 150, 60
+    nx, ny = 200, 100 # mesh size 180, 90
     VolFrac = 0.4*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
@@ -303,7 +288,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 1.5*L/nx
+    r_min = 1.25*L/nx
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -314,77 +299,6 @@ def main():
     rho_temp = Function(RHO) # used for initiliase function
     rho_filt = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
-    
-    # --- Function for random intialisation ---
-    def Initialise_rho():
-        # Define the size and spacing of the diamonds
-        spacing_x = 0.1
-        spacing_y = 0.1
-
-        # Evaluate function to create a repeated diamond pattern
-        with rho_init.dat.vec as rho_vec:
-            for i, x in enumerate(mesh.coordinates.dat.data):
-                # Compute the position within the repeated pattern
-                pattern_x = x[0] % (2 * spacing_x)
-                pattern_y = x[1] % (2 * spacing_y)
-                
-                # Compute the distance from the center of the current pattern cell
-                distance_x = abs(pattern_x - spacing_x)
-                distance_y = abs(pattern_y - spacing_y)
-                
-                # Assign values to create a diamond pattern
-                if distance_x / spacing_x + distance_y / spacing_y <= 1:
-                    rho_vec[i] = 1.0
-                else:
-                    rho_vec[i] = 0.0
-
-
-        def HH_filter():
-            r_min=0.12
-            rhof, w = TrialFunction(RHO), TestFunction(RHO)
-            A = (r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
-            L = rho_init*w*dx
-            bc = []
-            solve(A==L, rho_temp, bcs=bc)
-        
-        HH_filter()
-        
-    def striped():
-        # Define the angle of the stripes (in radians)
-        stripe_angle = np.pi  # 30 degrees
-
-        # Define the spacing between the stripes
-        stripe_spacing = 0.2
-
-        # Define the width of the central column
-        central_column_width = 0.4
-
-        # Evaluate function to create the combined pattern
-        with rho_init.dat.vec as rho_vec:
-            for i, x in enumerate(mesh.coordinates.dat.data):
-                # Compute the position relative to the centerline of the stripes
-                position_x = x[0] * np.cos(stripe_angle) + x[1] * np.sin(stripe_angle)
-                
-                # Compute the distance from the centerline of the stripes
-                distance = abs(position_x - W / 2) % (2 * stripe_spacing)
-                
-                # Assign values based on the position relative to the central column
-                if abs(x[1] - W / 2) <= central_column_width / 2:
-                    rho_vec[i] = 1.0
-                elif distance <= stripe_spacing:
-                    rho_vec[i] = 1.0
-                else:
-                    rho_vec[i] = 0.0
-                    
-        def HH_filter():
-            r_min=0.08
-            rhof, w = TrialFunction(RHO), TestFunction(RHO)
-            A = (r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
-            L = rho_init*w*dx
-            bc = []
-            solve(A==L, rho_temp, bcs=bc)
-
-        HH_filter()
 
     # ------ create optimiser -----
     rho_init.vector()[:] = 0.5
@@ -399,7 +313,8 @@ def main():
     phi_max = 100
     phi_min = 0
     u_min = 0
-    u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
+    # u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
+    u_max = 15*1.5e-8
     force_func_max = 1
     force_func_min = -1
     # force constraints
@@ -434,7 +349,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 95 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
+            max_iter = 120 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -463,38 +378,8 @@ def main():
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
         
-        # write new file with each iteration
-        filename = f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.pvd"
-        File(filename).write(rho_init)
-        
         # write png files of final rho distribution
-        fig, axes = plt.subplots()
-        collection = tripcolor(rho, axes=axes, cmap='viridis')
-        colorbar = fig.colorbar(collection);
-        colorbar.set_label(r'$\rho$',fontsize=14,rotation=90)
-        plt.title(f"sub_iteration: {i}")
-        plt.gca().set_aspect(1)
-        plt.savefig(f"/home/is420/MEng_project_controlled/newIDPresults/iteration_realVal{i}.png")
-        plt.close("all")
-        
-        # create plots for the constraints
-        constraint_history(obj.function_constraint,"function_constraint",i)
-        constraint_history(obj.IDP_constraint,"IDP_constraint",i)
-        constraint_history(obj.Volume_constraint,"Volume_constraint",i)
-        constraint_history(obj.u_constraint,"u_constraint",i)
-        constraint_history(obj.uf_constraint,"Upper_Force_Constraint",i)
-        constraint_history(obj.lf_constraint,"Lower_Force_Constraint",i)
-        constraint_history(obj.eq_constraint,"Equillibrium_Constraint",i)
-        
-        # create plot of the objective
-        constraint_history(obj.objective_history,"Objective_History",i)
-        
-        # plot functions
-        function_plot(obj.ForcingFunction,"ForcingFunctionDomain",i)
-        
-        # plot forces
-        force_history(obj.upper_force,"Upper Force",i)
-        force_history(obj.lower_force,"Lower Force",i)
+        function_plot(rho_init,'final rho distribution',i)
         
         # ----- Final boundary Forces ----
         print(f"##################################")
