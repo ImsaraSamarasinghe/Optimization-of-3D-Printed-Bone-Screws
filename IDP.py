@@ -271,7 +271,7 @@ def main():
     t1 = 0
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size # original 5.0,1.0
-    nx, ny = 200, 100 # mesh size 180, 90
+    nx, ny = 180, 90 # mesh size 180, 90
     VolFrac = 0.4*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
@@ -370,10 +370,7 @@ def main():
         x0 = rho_init.vector()[:].tolist() # Warm start the next iteration using the last iteration
         
         # phi_max according to paper
-        if (i==7):
-            phi_max = 0.075*100
-        else:
-            phi_max = 0.35*100
+        phi_max = obj.IDP_constraint[-1] # use the last reached value of IDP_constraint
             
         alpha = 0.18*i-0.13 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
