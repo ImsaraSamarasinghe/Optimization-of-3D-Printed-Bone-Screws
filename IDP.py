@@ -58,7 +58,9 @@ class cantilever:
         self.n = FacetNormal(self.mesh)
         # --- Forcing Function ----
         self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
-
+        # --- record shear stress for objective ---
+        self.obj_shear_upper = []
+        self.obj_shear_lower = []
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -156,6 +158,13 @@ class cantilever:
         avg_ss_lower = Force_lower/area_lower
         J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
         
+        """ Record for testing only """
+        with open('PickleFiles/RecordFiles.pkl','wb') as file:
+            self.obj_shear_upper.append(Force_upper)
+            self.obj_shear_lower.append(Force_lower)
+            pickle.dump((self.obj_shear_upper,self.obj_shear_lower), file)
+        """ Record for testing only """
+
         self.rec_objective(J)
         self.rec_forces(s)
         
@@ -272,7 +281,7 @@ def main():
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size # original 5.0,1.0
     nx, ny = 180, 90 # mesh size 180, 90
-    VolFrac = 0.4*L*W # Volume Fraction
+    VolFrac = 0.5*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([2000,0]) # load # t = 2000
@@ -288,7 +297,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 1.25*L/nx
+    r_min = 1.6*L/nx
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -310,7 +319,7 @@ def main():
     # --- constraints (max & min)---
     Volume_Lower = 0
     Volume_Upper = VolFrac
-    phi_max = 100
+    phi_max = 10
     phi_min = 0
     u_min = 0
     # u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
@@ -328,11 +337,11 @@ def main():
     # ------------------------------
 
     cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min] # lower bound of the constraints
-    alpha = 0.0000001 # value of alpha
-    beta = 2 # value of beta
+    alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001
+    beta = 3 # value of beta , ORIGINAL = 2
     
     # ------- solve with sub-iterations -------
-    for i in range(1,2): # set for only sub-iteration
+    for i in range(1,5): # set for only sub-iteration
         cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
         
@@ -349,7 +358,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 120 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
+            max_iter = 84 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -361,6 +370,7 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
+        TopOpt_problem.add_option('max_cpu_time', 700.0)
 
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
