@@ -219,12 +219,16 @@ class cantilever:
         lower_force_constraint = assemble(dot(voigt_stress,self.n)*ds(3))
         equillibrium_constraint = assemble(dot(voigt_stress,self.n)*ds(4)-dot(voigt_stress,self.n)*ds(3))
 
-        # shear constraint
-        shear_constraint = assemble(self.sigma(self.uh)[0,1]*ds(4)+self.sigma(self.uh)[0,1]*ds(3))
+        # shear constraint (top and bottom shear must be equivalent)
+        s = self.sigma(self.uh)
+        shear_constraint = assemble(s[0,1]*ds(4)+s[0,1]*ds(3))
+
+        # shear must add upto total force
+        force_xx = assemble(s[0,0]*ds(2)-s[0,1]*ds(3)+s[0,1]*ds(4))
         
         self.rec_constraints(0,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
         
-        return np.array((IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint,shear_constraint))
+        return np.array((IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint,shear_constraint,force_xx))
     
     
     # function to find jacobian
@@ -263,11 +267,15 @@ class cantilever:
         jac7 = compute_gradient(equillibrium_constraint,c)
 
         # shear constraint
-        shear_constraint = assemble(self.sigma(self.uh)[0,1]*ds(4)+self.sigma(self.uh)[0,1]*ds(3))
+        s = self.sigma(self.uh)
+        shear_constraint = assemble(s[0,1]*ds(4)+s[0,1]*ds(3))
         jac8 = compute_gradient(shear_constraint,c)
+
+        # shear must add upto total force
+        force_xx = assemble(s[0,0]*ds(2)-s[0,1]*ds(3)+s[0,1]*ds(4))
+        jac9 = compute_gradient(force_xx,c)
         
-        
-        return np.concatenate((jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data,jac8.dat.data))
+        return np.concatenate((jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data,jac8.dat.data,jac9.dat.data))
 
 
 def function_plot(function,str,sub_iter):
@@ -300,7 +308,8 @@ def main():
     V = VectorFunctionSpace(mesh,'CG',1)
     RHO = FunctionSpace(mesh,'CG',1)
     STRESS = FunctionSpace(mesh,'CG',1) ## stress function space
-    BC1 = DirichletBC(V,Constant([0,0]),1)
+    # BC1 = DirichletBC(V,Constant([0,0]),1)
+    BC1 = DirichletBC(V.sub(1),Constant(0),2) # set y component of Neumann boundary to zero
     BC2 = DirichletBC(V,Constant([0,0]),3)
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
@@ -327,7 +336,7 @@ def main():
     # --- constraints (max & min)---
     Volume_Lower = 0
     Volume_Upper = VolFrac
-    phi_max = 4 # currently set at 10
+    phi_max = 100 # currently set at 10
     phi_min = 0
     u_min = 0
     # u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
@@ -345,15 +354,18 @@ def main():
     # shear
     max_shear_con = 1
     min_shear_con = -1
+    # force equillibrium in xx
+    max_force_xx = 1
+    min_force_xx = -1
     # ------------------------------
 
-    cl = [phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,min_shear_con] # lower bound of the constraints
+    cl = [phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,min_shear_con,min_force_xx] # lower bound of the constraints
     alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001
     beta = 3 # value of beta , ORIGINAL = 2
     
     # ------- solve with sub-iterations -------
     for i in range(1,2): # set for only sub-iteration
-        cu = [phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max,max_shear_con] #Update the constraints 
+        cu = [phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max,max_shear_con,max_force_xx] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
         
         # Setup problem
