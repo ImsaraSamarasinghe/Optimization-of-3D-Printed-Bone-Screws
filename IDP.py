@@ -313,7 +313,7 @@ def main():
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 1.6*L/nx
+    r_min = 1.6*L/nx # working is only at 1.6 and with IDP using rho_filt2
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -330,7 +330,8 @@ def main():
     function_plot(rho_init,"initialisation_rho_","inital") # plot the initialised rho domain
     x0 = rho_init.vector()[:].tolist() # Initial guess (rho initial)
     ub = np.ones(rho_init.vector()[:].shape).tolist() # upper bound of rho
-    lb = np.zeros(rho_init.vector()[:].shape).tolist() # lower bound of rho
+    lb = np.ones(rho_init.vector()[:].shape)*0.00001 # lower bound of rho
+    lb = lb.tolist()
     
     # --- constraints (max & min)---
     Volume_Lower = 0
@@ -359,7 +360,7 @@ def main():
     # ------------------------------
 
     cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,min_shear_con,min_force_xx] # lower bound of the constraints
-    alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001
+    alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001 try with alpha=0.05
     beta = 2 # value of beta , ORIGINAL = 2 current 3
     
     # ------- solve with sub-iterations -------
@@ -380,7 +381,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 120 ## currently stopping at 58
+            max_iter = 92 ## currently stopping at 58
         else:
             max_iter = 50 ## currently stopping at 10
         
@@ -392,7 +393,7 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
-        TopOpt_problem.add_option('max_cpu_time', 400.0)
+        TopOpt_problem.add_option('max_cpu_time', 600.0)
         # TopOpt_problem.add_option('max_wall_time', 360.0)
 
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
