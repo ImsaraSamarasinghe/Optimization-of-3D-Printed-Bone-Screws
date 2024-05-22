@@ -198,16 +198,16 @@ class cantilever:
         self.rho.vector()[:] = x
         self.HH_filter()
         self.tanh_filter(0.5)
-        """
+        
         # Volume Constraint
         Volume = assemble(self.rho_filt2*dx)
-        """
+        
         # Intermediate Density Penalisation
-        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
+        IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
         
         # Magnitude constraint on the RHS boundary
         self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        mag = assemble(dot(self.uh,self.n)*ds(2))
         
         # Forcing Function
         mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
@@ -226,9 +226,9 @@ class cantilever:
         # shear must add upto total force
         force_xx = assemble(s[0,0]*ds(2)-s[0,1]*ds(3)+s[0,1]*ds(4))
         
-        self.rec_constraints(0,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
+        self.rec_constraints(Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint) # record all constraints for history
         
-        return np.array((IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint,shear_constraint,force_xx))
+        return np.array((Volume,IDP,mag,mag2,upper_force_constraint,lower_force_constraint,equillibrium_constraint,shear_constraint,force_xx))
     
     
     # function to find jacobian
@@ -237,19 +237,18 @@ class cantilever:
         self.rho.vector()[:] = x
         self.HH_filter()
         self.tanh_filter(0.5)
-        """
+        c = Control(self.rho)
         # gradient of the colume constraint
         Volume = assemble(self.rho_filt2*dx)
         jac1 = compute_gradient(Volume,c)
-        """
-        c = Control(self.rho)
+        
         # gradient of the IDP Function
-        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
+        IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx) ##### changed to rho_filt
         jac2 = compute_gradient(IDP,c)
         
         # gradient of the magnitude on the RHS boundary
         self.forward()
-        mag = assemble(inner(self.uh,self.uh)**(0.5)*ds(2))
+        mag = assemble(dot(self.uh,self.n)*ds(2))
         jac3 = compute_gradient(mag,c)
         
         # gradient of the forcing function
@@ -275,7 +274,7 @@ class cantilever:
         force_xx = assemble(s[0,0]*ds(2)-s[0,1]*ds(3)+s[0,1]*ds(4))
         jac9 = compute_gradient(force_xx,c)
         
-        return np.concatenate((jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data,jac8.dat.data,jac9.dat.data))
+        return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data,jac5.dat.data,jac6.dat.data,jac7.dat.data,jac8.dat.data,jac9.dat.data))
 
 
 def function_plot(function,str,sub_iter):
@@ -297,7 +296,7 @@ def main():
     # ------ problem parameters ------------
     L, W = 5.0, 1.0 # domain size # original 5.0,1.0
     nx, ny = 180, 90 # mesh size 180, 90
-    VolFrac = 0.5*L*W # Volume Fraction
+    VolFrac = 0.7*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([2000,0]) # load # t = 2000
@@ -336,7 +335,7 @@ def main():
     # --- constraints (max & min)---
     Volume_Lower = 0
     Volume_Upper = VolFrac
-    phi_max = 100 # currently set at 10
+    phi_max = 10 # currently set at 10
     phi_min = 0
     u_min = 0
     # u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
@@ -359,13 +358,13 @@ def main():
     min_force_xx = -1
     # ------------------------------
 
-    cl = [phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,min_shear_con,min_force_xx] # lower bound of the constraints
+    cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,min_shear_con,min_force_xx] # lower bound of the constraints
     alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001
-    beta = 3 # value of beta , ORIGINAL = 2
+    beta = 2 # value of beta , ORIGINAL = 2 current 3
     
     # ------- solve with sub-iterations -------
-    for i in range(1,2): # set for only sub-iteration
-        cu = [phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max,max_shear_con,max_force_xx] #Update the constraints 
+    for i in range(1,5): # set for only sub-iteration
+        cu = [Volume_Upper,phi_max,u_max,force_func_max,upper_force_max,lower_force_max,equillibrium_max,max_shear_con,max_force_xx] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
         
         # Setup problem
@@ -381,9 +380,9 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 120 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 150 ;; 140 ;; 138;; 84
+            max_iter = 120 ## currently stopping at 58
         else:
-            max_iter = 50 ##30 - tested - MAX: 60 currently at 50
+            max_iter = 50 ## currently stopping at 10
         
         
         TopOpt_problem.add_option('linear_solver', 'ma57')
@@ -393,7 +392,8 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
-        TopOpt_problem.add_option('max_cpu_time', 700.0)
+        TopOpt_problem.add_option('max_cpu_time', 400.0)
+        # TopOpt_problem.add_option('max_wall_time', 360.0)
 
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
