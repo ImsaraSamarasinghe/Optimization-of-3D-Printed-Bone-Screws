@@ -203,7 +203,7 @@ class cantilever:
         Volume = assemble(self.rho_filt2*dx)
         
         # Intermediate Density Penalisation
-        IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx)
+        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx)
         
         # Magnitude constraint on the RHS boundary
         self.forward()
@@ -243,7 +243,7 @@ class cantilever:
         jac1 = compute_gradient(Volume,c)
         
         # gradient of the IDP Function
-        IDP = assemble(((4.*self.rho_filt*(1.-self.rho_filt))**(1-self.alpha))*dx) ##### changed to rho_filt
+        IDP = assemble(((4.*self.rho_filt2*(1.-self.rho_filt2))**(1-self.alpha))*dx) ##### changed to rho_filt
         jac2 = compute_gradient(IDP,c)
         
         # gradient of the magnitude on the RHS boundary
@@ -299,7 +299,7 @@ def main():
     VolFrac = 0.7*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
-    t = Constant([2000,0]) # load # t = 2000
+    t = Constant([1400,0]) # load # t = 2000
 
     # ----- setup BC, mesh, and function spaces ----
     mesh = RectangleMesh(nx,ny,L,W)
@@ -340,7 +340,7 @@ def main():
     phi_min = 0
     u_min = 0
     # u_max = 20*6.477e-9# Value seen with full titanium block pulled out. (multiplied)
-    u_max = 15*1.5e-8
+    u_max = 1000*5.26e-09 # 15*1.5e-8
     force_func_max = 1
     force_func_min = -1
     # force constraints
@@ -360,7 +360,7 @@ def main():
     # ------------------------------
 
     cl = [Volume_Lower,phi_min,u_min,force_func_min,upper_force_min,lower_force_min,equillibrium_min,min_shear_con,min_force_xx] # lower bound of the constraints
-    alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001 try with alpha=0.05
+    alpha = 0.05 # value of alpha , ORIGINAL = 0.0000001 try with alpha=0.05
     beta = 2 # value of beta , ORIGINAL = 2 current 3
     
     # ------- solve with sub-iterations -------
@@ -381,9 +381,9 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 92 ## currently stopping at 58
+            max_iter = 50 ## currently stopping at 58
         else:
-            max_iter = 50 ## currently stopping at 10
+            max_iter = 20 ## currently stopping at 10
         
         
         TopOpt_problem.add_option('linear_solver', 'ma57')
@@ -393,7 +393,7 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
-        TopOpt_problem.add_option('max_cpu_time', 600.0)
+        TopOpt_problem.add_option('max_cpu_time', 700.0)
         # TopOpt_problem.add_option('max_wall_time', 360.0)
 
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
@@ -406,7 +406,7 @@ def main():
         # phi_max according to paper
         phi_max = obj.IDP_constraint[-1] # use the last reached value of IDP_constraint
             
-        alpha = 0.18*i-0.13 # Update alpha linearly according to paper
+        alpha = 0.18*i-0.13+0.05 # Update alpha linearly according to paper
         beta = 4*i # Update beta according to paper
         
         # write png files of final rho distribution
