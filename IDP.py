@@ -38,6 +38,7 @@ class cantilever:
         self.iter = iter # iteration count
         self.d_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/vtu/uh_iter_{self.iter}.pvd")
         self.s_file = File(f"/home/is420/MEng_project_controlled/newIDPresults/stress_folder/stresses_iter.pvd")
+        self.rho_file = File(f"/home/is420/MEng_project_controlled/ReportPics/notAux/rho_notAux_{self.iter}.pvd")
         self.rho_filt2 = Function(self.RHO) # new function to store after TANH filter
         self.png_count = 0
         # -- lists for storing constraints -- 
@@ -74,7 +75,7 @@ class cantilever:
         self.mu = E/(2*(1+self.nu))
         a = inner(self.sigma(self.u),self.epsilon(self.v))*dx
         l = inner(self.t,self.v)*ds(2)
-        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC1,self.BC2,self.BC3])
+        forward_problem = LinearVariationalProblem(a,l,self.uh,bcs=[self.BC2,self.BC3])
         forward_solver = LinearVariationalSolver(forward_problem)
         forward_solver.solve()
     
@@ -111,16 +112,17 @@ class cantilever:
         self.tanh_filter(0.5) # filter using tanh filter (eta = 0.5)
         self.forward() # forward problem
         self.d_file.write(self.uh) # write displacement to file
+        self.rho_file.write(self.rho_filt2)
         self.rec_stress()
         # Find the new objective
         s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
+        # Force_lower = assemble(s[0,1]*ds(3))
         area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
+        # area_lower = assemble(self.find_area*ds(3))
         avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        # avg_ss_lower = Force_lower/area_lower
+        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4))
         
         return J
         
@@ -134,12 +136,12 @@ class cantilever:
         # --- find gradient ------
         s = self.sigma(self.uh)
         Force_upper = assemble(s[0,1]*ds(4))
-        Force_lower = assemble(s[0,1]*ds(3))
+        # Force_lower = assemble(s[0,1]*ds(3))
         area_upper = assemble(self.find_area*ds(4))
-        area_lower = assemble(self.find_area*ds(3))
+        # area_lower = assemble(self.find_area*ds(3))
         avg_ss_upper = Force_upper/area_upper
-        avg_ss_lower = Force_lower/area_lower
-        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4)+(s[0,1]-avg_ss_lower)**2*ds(3))
+        # avg_ss_lower = Force_lower/area_lower
+        J = assemble((s[0,1]-avg_ss_upper)**2*ds(4))
         
         c = Control(self.rho)
         dJdRho = compute_gradient(J,c)
@@ -165,7 +167,7 @@ class cantilever:
         
         # Forcing Function
         self.function()
-        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(4))
         
         self.rec_constraints(Volume,IDP,mag,mag2)
         
@@ -195,7 +197,7 @@ class cantilever:
         
         # gradient of the forcing function
         self.function()
-        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(3)+(self.rho_filt2-self.ForcingFunction)**2*ds(4))
+        mag2 = assemble((self.rho_filt2-self.ForcingFunction)**2*ds(4))
         jac4 = compute_gradient(mag2,c)
         
         return np.concatenate((jac1.dat.data,jac2.dat.data,jac3.dat.data,jac4.dat.data))
@@ -228,9 +230,9 @@ def main():
     # Times
     t1 = 0
     # ------ problem parameters ------------
-    L, W = 5.0, 1.0 # domain size
-    nx, ny = 150, 60 # mesh size
-    VolFrac = 0.4*L*W # Volume Fraction
+    L, W = 5.0, 0.5 # domain size
+    nx, ny = 150, 30 # mesh size
+    VolFrac = 0.7*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties # code tested at 1 kinda worked # new youngs modulus titanium alloy 
     p, E_min = 3.0, 1e-3 # SIMP Values
     t = Constant([2000,0]) # load # t = 2000
@@ -242,11 +244,11 @@ def main():
     RHO = FunctionSpace(mesh,'CG',1)
     STRESS = FunctionSpace(mesh,'CG',1) ## stress function space
     BC1 = DirichletBC(V,Constant([0,0]),1)
-    BC2 = DirichletBC(V,Constant([0,0]),3)
+    BC2 = DirichletBC(V.sub(1),Constant(0),3)
     BC3 = DirichletBC(V,Constant([0,0]),4)
     
     # radius for hh HH_filter
-    r_min = 0.08
+    r_min = 1.6*L/nx # 0.08
 
     # ------ setup functions -----
     v = TestFunction(V)
@@ -257,77 +259,6 @@ def main():
     rho_temp = Function(RHO) # used for initiliase function
     rho_filt = Function(RHO)
     find_area = Function(RHO).assign(Constant(1))
-    
-    # --- Function for random intialisation ---
-    def Initialise_rho():
-        # Define the size and spacing of the diamonds
-        spacing_x = 0.1
-        spacing_y = 0.1
-
-        # Evaluate function to create a repeated diamond pattern
-        with rho_init.dat.vec as rho_vec:
-            for i, x in enumerate(mesh.coordinates.dat.data):
-                # Compute the position within the repeated pattern
-                pattern_x = x[0] % (2 * spacing_x)
-                pattern_y = x[1] % (2 * spacing_y)
-                
-                # Compute the distance from the center of the current pattern cell
-                distance_x = abs(pattern_x - spacing_x)
-                distance_y = abs(pattern_y - spacing_y)
-                
-                # Assign values to create a diamond pattern
-                if distance_x / spacing_x + distance_y / spacing_y <= 1:
-                    rho_vec[i] = 1.0
-                else:
-                    rho_vec[i] = 0.0
-
-
-        def HH_filter():
-            r_min=0.12
-            rhof, w = TrialFunction(RHO), TestFunction(RHO)
-            A = (r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
-            L = rho_init*w*dx
-            bc = []
-            solve(A==L, rho_temp, bcs=bc)
-        
-        HH_filter()
-        
-    def striped():
-        # Define the angle of the stripes (in radians)
-        stripe_angle = np.pi  # 30 degrees
-
-        # Define the spacing between the stripes
-        stripe_spacing = 0.2
-
-        # Define the width of the central column
-        central_column_width = 0.4
-
-        # Evaluate function to create the combined pattern
-        with rho_init.dat.vec as rho_vec:
-            for i, x in enumerate(mesh.coordinates.dat.data):
-                # Compute the position relative to the centerline of the stripes
-                position_x = x[0] * np.cos(stripe_angle) + x[1] * np.sin(stripe_angle)
-                
-                # Compute the distance from the centerline of the stripes
-                distance = abs(position_x - W / 2) % (2 * stripe_spacing)
-                
-                # Assign values based on the position relative to the central column
-                if abs(x[1] - W / 2) <= central_column_width / 2:
-                    rho_vec[i] = 1.0
-                elif distance <= stripe_spacing:
-                    rho_vec[i] = 1.0
-                else:
-                    rho_vec[i] = 0.0
-                    
-        def HH_filter():
-            r_min=0.08
-            rhof, w = TrialFunction(RHO), TestFunction(RHO)
-            A = (r_min**2)*inner(grad(rhof), grad(w))*dx+rhof*w*dx
-            L = rho_init*w*dx
-            bc = []
-            solve(A==L, rho_temp, bcs=bc)
-
-        HH_filter()
 
     # ------ create optimiser -----
     rho_init.assign(0.5) # Assign starting initialisation for the rho field = 0.5
@@ -349,10 +280,10 @@ def main():
 
     cl = [Volume_Lower,phi_min,u_min,force_func_min] # lower bound of the constraints
     alpha = 0.0000001 # value of alpha
-    beta = 2 # value of beta
+    beta = 4 # value of beta
     
     # ------- solve with sub-iterations -------
-    for i in range(1,5):
+    for i in range(1,4):
         cu = [Volume_Upper,phi_max,u_max,force_func_max] #Update the constraints 
         obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i) # create object class
         
@@ -369,7 +300,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 150 ##90 - tested - MAX: 160 ---> 180 received alpha errors ;; currently at 160
+            max_iter = 120 ## @ 130
         else:
             max_iter = 50 ##30 - tested - MAX: 60 currently at 50
         
@@ -381,6 +312,7 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
+        # TopOpt_problem.add_option('max_cpu_time', 600.0)
 
         print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
