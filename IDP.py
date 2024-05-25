@@ -279,7 +279,7 @@ def main():
     VolFrac = 0.7*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
-    t = Constant([2000,0]) # load # t = 2000
+    t = Constant([3000,0]) # load # t = 2000
 
     # ----- setup BC, mesh, and function spaces ----
     mesh = RectangleMesh(nx,ny,L,W)
@@ -335,11 +335,14 @@ def main():
     cl = [Volume_Lower,phi_min,u_min,force_func_min,lower_force_min,min_force_xx] # lower bound of the constraints
     alpha = 0.000001 # value of alpha , ORIGINAL = 0.0000001 try with alpha=0.05
     beta = 3 # value of beta , ORIGINAL = 2 current 3
-    
+    i = 1
+    obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
+
     # ------- solve with sub-iterations -------
     for i in range(1,5): # set for only sub-iteration
+        obj.iter = i # update iter inside the class object
+
         cu = [Volume_Upper,phi_max,u_max,force_func_max,lower_force_max,max_force_xx] #Update the constraints 
-        obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
         
         # Setup problem
         TopOpt_problem = cyipopt.Problem(
@@ -369,7 +372,7 @@ def main():
         TopOpt_problem.add_option('max_cpu_time', 700.0)
         # TopOpt_problem.add_option('max_wall_time', 360.0)
 
-        print(f" ##### starting sub-it: {i}, alpha: {alpha}, beta: {beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
+        print(f" ##### starting sub-it: {i}, alpha: {obj.alpha}, beta: {obj.beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
         rho_opt, info = TopOpt_problem.solve(x0) # ---- SOLVE -----
         print(f" ##### ending sub-it: {i} #####")
         
@@ -379,8 +382,8 @@ def main():
         # phi_max according to paper
         phi_max = obj.IDP_constraint[-1] # use the last reached value of IDP_constraint
             
-        alpha = 0.18*i-0.13+0.05 # Update alpha linearly according to paper
-        beta = 4*i # Update beta according to paper
+        obj.alpha = 0.18*i-0.13+0.05 # Update alpha linearly according to paper
+        obj.beta = 4*i # Update beta according to paper
         
         # write png files of final rho distribution
         function_plot(rho_init,'final rho distribution',i)
