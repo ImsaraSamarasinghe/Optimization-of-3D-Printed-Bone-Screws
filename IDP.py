@@ -57,10 +57,14 @@ class cantilever:
         # --- Facet Normals ---
         self.n = FacetNormal(self.mesh)
         # --- Forcing Function ----
-        self.ForcingFunction = project((tanh(asin(sin(15*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges.
+        self.ForcingFunction = project((tanh(asin(sin(30*self.x))*100)+1)/2,self.RHO) # Added a forcing function for edges. a=15 originally
         # --- record shear stress for objective ---
         self.obj_shear_upper = []
         self.obj_shear_lower = []
+        # --- domain stress recording ---
+        self.sigma_xx_snap = []
+        self.sigma_yy_snap = []
+        self.sigma_xy_snap = []
         
     #---------- class attributes for computations ---------------
     def HH_filter(self): # Helmholtz filter for densities
@@ -99,9 +103,18 @@ class cantilever:
     ####
     def rec_stress(self):
         s = self.sigma(self.uh)
-        shear = s[0,1]
-        ss = project(shear,self.STRESS)
-        
+        sigma_xx = project(s[0,0],self.STRESS)
+        sigma_xy = project(s[0,1],self.STRESS)
+        sigma_yy = project(s[1,1],self.STRESS)
+
+        self.sigma_xx_snap = sigma_xx.vector()[:].tolist()
+        self.sigma_yy_snap = sigma_yy.vector()[:].tolist()
+        self.sigma_xy_snap = sigma_xy.vector()[:].tolist()
+
+        with open('PickleFiles/stresses.pkl','wb') as file:
+            pickle.dump((self.sigma_xx_snap,self.sigma_yy_snap,self.sigma_xy_snap),file)
+
+        """
         fig, axes = plt.subplots()
         collection = tripcolor(ss, axes=axes, cmap='viridis')
         colorbar = fig.colorbar(collection);
@@ -110,6 +123,7 @@ class cantilever:
         plt.savefig(f"PNG_shear/shear_{self.png_count}_{self.iter}.png")
         self.png_count = self.png_count + 1
         plt.close('all')
+        """
     ####
     def rec_constraints(self,vol,IDP,u,func,uf,lf,equillibrium):
         self.function_constraint.append(func)
@@ -279,7 +293,7 @@ def main():
     VolFrac = 0.7*L*W # Volume Fraction
     E_max, nu = 110e9, 0.3 # material properties #try changing the poissons ratio 
     p, E_min = 3.0, 1e-3 # SIMP Values
-    t = Constant([3000,0]) # load # t = 2000
+    t = Constant([2000,0]) # load # t = 2000
 
     # ----- setup BC, mesh, and function spaces ----
     mesh = RectangleMesh(nx,ny,L,W)
@@ -287,6 +301,7 @@ def main():
     V = VectorFunctionSpace(mesh,'CG',1)
     RHO = FunctionSpace(mesh,'CG',1)
     STRESS = FunctionSpace(mesh,'CG',1) ## stress function space
+    S = VectorFunctionSpace(mesh,'CG',1,dim=3) # for final stress distribution
     # BC1 = DirichletBC(V,Constant([0,0]),1)
     BC1 = DirichletBC(V.sub(1),Constant(0),2) # set y component of Neumann boundary to zero
     BC2 = DirichletBC(V,Constant([0,0]),3)
@@ -339,7 +354,7 @@ def main():
     obj = cantilever(E_max,nu,p,E_min,t,BC1,BC2,BC3,v,u,uh,rho,rho_filt,r_min,RHO,find_area,alpha,beta,STRESS,x,i,mesh) # create object class
 
     # ------- solve with sub-iterations -------
-    for i in range(1,5): # set for only sub-iteration
+    for i in range(1,2): # 5
         obj.iter = i # update iter inside the class object
 
         cu = [Volume_Upper,phi_max,u_max,force_func_max,lower_force_max,max_force_xx] #Update the constraints 
@@ -357,7 +372,7 @@ def main():
         
         # ------ Solver Settings ----
         if (i==1):
-            max_iter = 120 ## currently stopping at 58
+            max_iter = 102## 120
         else:
             max_iter = 40 ## currently stopping at 10
         
@@ -369,7 +384,7 @@ def main():
         TopOpt_problem.add_option('mu_strategy', 'adaptive')
         TopOpt_problem.add_option('mu_oracle', 'probing')
         TopOpt_problem.add_option('tol', 1e-5)
-        TopOpt_problem.add_option('max_cpu_time', 700.0)
+        TopOpt_problem.add_option('max_cpu_time', 500.0) # 700
         # TopOpt_problem.add_option('max_wall_time', 360.0)
 
         print(f" ##### starting sub-it: {i}, alpha: {obj.alpha}, beta: {obj.beta}, phi_max: {phi_max}, max_iter: {max_iter} ###### ")
@@ -393,6 +408,13 @@ def main():
         print(f"Upper force: {obj.upper_force[-1]}")
         print(f"Lower force: {obj.lower_force[-1]}")
         print(f"##################################")
+        """
+        if (i==2):
+            s = obj.sigma(obj.uh)
+            voigt_vec = as_vector([s[0,0],s[1,1],s[0,1]])
+            voigt_proj = project(voigt_vec,S)
+            File("ReportPics/stresses/Stress_voigt.pvd").write(voigt_proj)
+        """
 
 if __name__ == '__main__':
     main()
