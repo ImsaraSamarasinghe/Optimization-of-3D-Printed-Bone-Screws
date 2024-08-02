@@ -7,7 +7,7 @@ To run the code, you are advised to install a working version of FIREDRAKE and C
 
 ## Simulation Result
 
-![Screw topology]()
+![Screw topology](P=1500.png)
 
 ## Branches
 Each branch shows a part of the development process used. The important ones are detailed below
