@@ -5,6 +5,10 @@ the Python interface of IPOPT, CYIPOPT, to solve a given optimisation problem.
 
 To run the code, you are advised to install a working version of FIREDRAKE and CYIPOPT before attempting to run any codes given in the code base.
 
+## Simulation Result
+
+![Screw topology]()
+
 ## Branches
 Each branch shows a part of the development process used. The important ones are detailed below
 1. facetNormals - The code in IDP.py creates an auxetic structure
