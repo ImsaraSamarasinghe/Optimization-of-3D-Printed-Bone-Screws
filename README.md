@@ -1,4 +1,4 @@
-# Cantilever Beam Topology Optimization
+# Bone Screw Topology Optimization
 
 This project implements a topology optimization routine using the Finite Element Method (FEM) for a bone screw. The code leverages the Firedrake and IPOPT (via `cyipopt`) libraries to solve for the optimal material distribution of the screw material under a load, based on the Solid Isotropic Material with Penalization (SIMP) model. The output is the optimized material distribution and an animation of the optimization process.
 
