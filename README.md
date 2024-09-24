@@ -2,6 +2,8 @@
 
 This project implements a topology optimization routine using the Finite Element Method (FEM) for a bone screw. The code leverages the Firedrake and IPOPT (via `cyipopt`) libraries to solve for the optimal material distribution of the screw material under a load, based on the Solid Isotropic Material with Penalization (SIMP) model. The output is the optimized material distribution and an animation of the optimization process.
 
+![](https://github.com/ImsaraSamarasinghe/Optimization-of-3D-Printed-Bone-Screws/blob/main/P%3D1500.png)
+
 ## Features
 
 - **Firedrake** FEM-based simulation.
@@ -85,7 +87,6 @@ After solving, the optimized cantilever beam design is displayed as a grayscale 
 
 - **Animation**: During optimization, the intermediate solutions are written to a `.pvd` file, which can be visualized using Paraview.
 - **Final Design**: The final material distribution is saved as a PNG image and can also be visualized using Paraview.
-  ![](https://github.com/ImsaraSamarasinghe/Optimization-of-3D-Printed-Bone-Screws/blob/main/P%3D1500.png)
 
 ## Example Output
 
