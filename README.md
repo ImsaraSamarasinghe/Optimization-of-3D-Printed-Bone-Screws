@@ -85,6 +85,7 @@ After solving, the optimized cantilever beam design is displayed as a grayscale 
 
 - **Animation**: During optimization, the intermediate solutions are written to a `.pvd` file, which can be visualized using Paraview.
 - **Final Design**: The final material distribution is saved as a PNG image and can also be visualized using Paraview.
+  ![](https://github.com/ImsaraSamarasinghe/Optimization-of-3D-Printed-Bone-Screws/blob/main/P%3D1500.png)
 
 ## Example Output
 
